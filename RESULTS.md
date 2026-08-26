@@ -88,12 +88,101 @@ check → bet → call → board J1 → check → bet → call     final: [bluff
   observer bet   → expected final |intent set| = 3.040   ← chosen
 ```
 
+
+## Task 2: cost-aware adversary — how much concealment does a chip buy?
+
+Adversary objective: maximise `E[final |intent set|] - lam * E[chips lost]`.
+**Weighted, not a hard budget**, because the adversary is already an
+expectation-max recursion over the tree: a weight folds into the terminal
+value and every node stays a plain max, whereas a hard constraint on expected
+loss needs a Lagrangian (i.e. this `lam`, found by search) or a constrained
+search over mixed strategies. `lam=0` is the pure concealer from the first
+tables; `lam=1000` is effectively a pure chip maximiser (concealment only
+breaks ties, toward the declared policy). Observer: adaptive, `mu=0`.
+Cells: mean over seeds 1–3 [min, max], 2000 hands each.
+`python3 sweep.py adversary`
+
+### Kuhn
+```
+setting                        exact                     H                 sound                 misID                contra               deviate                 chips
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+faithful         20.8% [19.9%,21.6%]      2.06 [2.04,2.08]100.0% [100.0%,100.0%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]+0.411 [+0.375,+0.449]
+lam=0               0.0% [0.0%,0.0%]      2.67 [2.66,2.68]   53.5% [52.0%,54.5%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]   43.5% [42.6%,44.4%]+1.000 [+1.000,+1.000]
+lam=0.1             0.0% [0.0%,0.0%]      2.67 [2.66,2.68]   53.5% [52.0%,54.5%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]   43.5% [42.6%,44.4%]+1.000 [+1.000,+1.000]
+lam=0.25            0.0% [0.0%,0.0%]      2.50 [2.50,2.51]   50.5% [49.5%,51.4%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]   43.8% [42.8%,44.7%]-0.008 [-0.026,+0.025]
+lam=0.5             0.0% [0.0%,0.0%]      2.41 [2.40,2.42]   59.3% [58.8%,60.3%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]   32.4% [30.9%,33.3%]-0.191 [-0.195,-0.186]
+lam=1               0.0% [0.0%,0.0%]      2.34 [2.34,2.35]   45.8% [45.2%,46.9%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]   40.5% [38.9%,41.3%]-0.328 [-0.354,-0.303]
+lam=2               0.0% [0.0%,0.0%]      2.34 [2.34,2.35]   45.8% [45.2%,46.9%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]   40.5% [38.9%,41.3%]-0.328 [-0.354,-0.303]
+lam=4               0.0% [0.0%,0.0%]      2.34 [2.34,2.35]   45.8% [45.2%,46.9%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]   40.5% [38.9%,41.3%]-0.328 [-0.354,-0.303]
+lam=1000            0.0% [0.0%,0.0%]      2.34 [2.34,2.35]   45.8% [45.2%,46.9%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]   40.5% [38.9%,41.3%]-0.328 [-0.354,-0.303]
+```
+
+### Leduc, impersonate
+```
+setting                        exact                     H                 sound                 misID                contra               deviate                 chips
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+faithful         38.5% [37.8%,39.4%]      2.65 [2.62,2.66]100.0% [100.0%,100.0%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]-0.509 [-0.539,-0.490]
+lam=0               0.0% [0.0%,0.0%]      4.64 [4.63,4.65]   65.7% [64.3%,67.0%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]   36.6% [36.4%,36.8%]+0.903 [+0.901,+0.907]
+lam=0.1             0.0% [0.0%,0.0%]      4.64 [4.63,4.65]   65.7% [64.3%,67.0%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]   36.6% [36.4%,36.8%]+0.903 [+0.901,+0.907]
+lam=0.25            0.0% [0.0%,0.0%]      4.57 [4.56,4.58]   64.6% [63.2%,65.8%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]   36.3% [36.2%,36.4%]+0.573 [+0.551,+0.587]
+lam=0.5             0.9% [0.8%,1.1%]      3.95 [3.94,3.96]   58.2% [56.8%,59.7%]      0.0% [0.0%,0.0%]      6.7% [6.4%,7.3%]   30.7% [30.4%,31.2%]-0.741 [-0.798,-0.696]
+lam=1               8.6% [8.3%,9.1%]      1.87 [1.84,1.91]   29.1% [27.8%,31.3%]   40.7% [39.9%,41.9%]    10.1% [9.6%,11.1%]   38.2% [37.7%,38.8%]-4.304 [-4.399,-4.193]
+lam=2             10.0% [9.4%,10.7%]      1.57 [1.54,1.59]   25.0% [23.2%,27.3%]   49.2% [48.0%,50.6%]    10.1% [9.6%,11.1%]   39.6% [39.1%,40.3%]-4.503 [-4.577,-4.409]
+lam=4            10.8% [10.4%,11.5%]      1.30 [1.29,1.31]   21.2% [20.2%,22.9%]   55.0% [53.8%,56.1%]    10.1% [9.6%,11.1%]   41.2% [40.8%,41.9%]-4.604 [-4.679,-4.510]
+lam=1000         10.8% [10.4%,11.5%]      1.30 [1.29,1.31]   21.2% [20.2%,22.9%]   55.0% [53.8%,56.1%]    10.1% [9.6%,11.1%]   41.2% [40.8%,41.9%]-4.604 [-4.679,-4.510]
+```
+
+### Leduc, refute
+```
+setting                        exact                     H                 sound                 misID                contra               deviate                 chips
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+faithful         38.5% [37.8%,39.4%]      2.65 [2.62,2.66]100.0% [100.0%,100.0%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]-0.509 [-0.539,-0.490]
+lam=0               1.5% [1.2%,1.8%]      1.64 [1.60,1.66]   23.3% [23.0%,23.9%]      6.4% [6.0%,6.7%]   56.7% [56.3%,57.5%]   51.9% [51.5%,52.7%]+0.433 [+0.279,+0.515]
+lam=0.1             1.5% [1.2%,1.8%]      1.46 [1.42,1.50]   20.6% [20.2%,21.2%]      8.7% [8.5%,8.9%]   59.4% [58.6%,60.3%]   56.5% [55.8%,57.7%]-0.068 [-0.245,+0.029]
+lam=0.25            1.5% [1.2%,1.8%]      1.46 [1.42,1.50]   20.6% [20.2%,21.2%]      8.7% [8.5%,8.9%]   59.4% [58.6%,60.3%]   56.5% [55.8%,57.7%]-0.068 [-0.245,+0.029]
+lam=0.5             1.1% [0.9%,1.1%]      1.10 [1.06,1.14]   16.4% [15.8%,16.7%]      5.8% [5.5%,6.1%]   56.4% [54.6%,58.1%]   54.1% [53.2%,55.9%]-1.312 [-1.436,-1.208]
+lam=1               5.0% [5.0%,5.1%]      1.70 [1.67,1.75]   25.0% [24.1%,26.6%]   30.3% [30.2%,30.5%]   20.7% [19.6%,21.6%]   41.8% [41.3%,42.3%]-3.966 [-4.103,-3.857]
+lam=2             10.0% [9.4%,10.7%]      1.54 [1.51,1.56]   25.0% [23.2%,27.3%]   46.6% [45.8%,47.5%]   12.8% [12.3%,13.4%]   39.3% [38.8%,39.9%]-4.422 [-4.508,-4.328]
+lam=4            10.8% [10.4%,11.5%]      1.30 [1.29,1.31]   21.2% [20.2%,22.9%]   55.0% [53.8%,56.1%]    10.1% [9.6%,11.1%]   41.2% [40.8%,41.9%]-4.604 [-4.679,-4.510]
+lam=1000         10.8% [10.4%,11.5%]      1.30 [1.29,1.31]   21.2% [20.2%,22.9%]   55.0% [53.8%,56.1%]    10.1% [9.6%,11.1%]   41.2% [40.8%,41.9%]-4.604 [-4.679,-4.510]
+```
+
+**Reading.**
+
+* **Kuhn: concealment is free.** The pure concealer (`lam=0`) pays a chip a
+  hand for 0% exact ID. At `lam=0.25` the adversary is break-even (−0.008)
+  and exact ID is still 0%, |H| 2.50 vs 2.06 faithful. At `lam>=1` the
+  adversary is a pure chip maximiser: it *beats* the adaptive observer
+  (−0.33/hand for the observer, which made +0.41 against a faithful subject),
+  and exact ID is still 0%. The observer's identification advantage in Kuhn
+  existed only because the subject was faithful; a player who simply plays to
+  win conceals intent as a side effect. "Your adversary is unrealistic" does
+  not rescue the observer — the realistic one is worse for it.
+* **Leduc, impersonate: break-even still hurts.** Break-even sits between
+  `lam=0.25` (observer +0.57) and `lam=0.5` (observer −0.74); on both sides
+  exact ID is ≤1% and |H| ≥ 3.95 (faithful: 38.5%, 2.65). At `lam>=1` the chip
+  maximiser wins 4.3–4.6 chips/hand from the `mu=0` observer — the
+  information-only rule is fully exploitable — and produces **41–55%
+  misattribution**: the observer collapses to exactly one intent and it is
+  the wrong one. Exact ID actually rises to ~11% there, because a profit
+  maximiser plays *some* intents faithfully by coincidence.
+* **Leduc, refute:** at `lam=0.1` the adversary is break-even (−0.07) with
+  59% contradictions and 8.7% misattribution. Above `lam=1` the refute and
+  impersonate adversaries converge on the same chip-maximising play.
+* At break-even, in every game and against both adversary types, the
+  adversary still holds exact ID at ≤1.5%. Concealment does not have to be
+  bought; playing well delivers it.
+
+
 ## Commands
 
 ```
 python3 kuhn_intent.py  --hands 2000 --condition all --subject both --seed 1
 python3 leduc_intent.py --hands 2000 --condition all --subject both --seed 1
 python3 leduc_intent.py --human --hands 10 --subject adversarial --adversary impersonate --log pilot.json
+python3 kuhn_intent.py  --hands 2000 --condition adaptive --subject adversarial --lam 0.25 --observer lookahead
+python3 leduc_intent.py --hands 2000 --condition adaptive --mu 0.1
+python3 sweep.py all          # ~1 min; every table above, seeds 1-3
 ```
 
 Per-hand JSON records carry a `subject` tag (`faithful`, `adversarial:impersonate`,

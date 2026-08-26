@@ -296,6 +296,8 @@ def observer_action_dist(H, hist, observer_card, condition, observer, mu):
                                    observer, mu): 1.0}
 
 
+# Cost: a WEIGHTED objective, concealment - lam * E[chips lost] (see the
+# matching comment in leduc_intent.py for why not a hard budget).
 def A(hist, belief, subject_card, condition, observer, mu, lam):
     """Adversary's expected (concealment - lam * chips lost) from `hist` on.
     `belief` = unnormalised weights over the observer's card, updated by the

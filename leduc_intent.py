@@ -261,16 +261,19 @@ ACTION_COST = {"check": 0, "fold": 0, "call": 1, "bet": 2, "raise": 2}
 
 
 @lru_cache(maxsize=None)
-def V(H, hist, observer_card):
+def V(H, hist, observer_card, mu=0.0):
+    """Expected (final |intent set| - mu * observer chips) under optimal
+    observer play from here, faithful subject, uniform prior over H.
+    mu = 0 is the pure information rule; mu > 0 buys chips with ambiguity."""
     who = to_act(hist)
     n = len(H)
     if who == "terminal":
-        if not is_showdown(hist):
-            return float(len(intent_set(H)))
         buckets = {}
         for (i, c) in H:
-            buckets.setdefault(c, []).append((i, c))
-        return sum(len(b) / n * len(intent_set(b)) for b in buckets.values())
+            buckets.setdefault(c if is_showdown(hist) else None, []).append((i, c))
+        size = sum(len(b) / n * len(intent_set(b)) for b in buckets.values())
+        chips = sum(observer_payoff(hist, c, observer_card) for (_, c) in H) / n
+        return size - mu * chips
     if who == "chance":
         v = 0.0
         for b in DECK:
@@ -278,18 +281,18 @@ def V(H, hist, observer_card):
                 continue
             Hb = tuple((i, c) for (i, c) in H if c != b)
             if Hb:
-                v += len(Hb) / (4 * n) * V(Hb, hist + ("board:" + b,), observer_card)
+                v += len(Hb) / (4 * n) * V(Hb, hist + ("board:" + b,), observer_card, mu)
         return v
     if who == "subject":
         buckets = {}
         for (i, c) in H:
             buckets.setdefault(policy(i, c, hist), []).append((i, c))
-        return sum(len(b) / n * V(tuple(b), hist + (a,), observer_card)
+        return sum(len(b) / n * V(tuple(b), hist + (a,), observer_card, mu)
                    for a, b in buckets.items())
-    return min(V(H, hist + (a,), observer_card) for a in legal(hist))
+    return min(V(H, hist + (a,), observer_card, mu) for a in legal(hist))
 
 
-def choose_observer_action(H, hist, observer_card, condition, rng):
+def choose_observer_action(H, hist, observer_card, condition, rng, mu=0.0):
     acts = legal(hist)
     if condition == "passive":
         return "check" if "check" in acts else "call"
@@ -298,17 +301,17 @@ def choose_observer_action(H, hist, observer_card, condition, rng):
     if condition == "adaptive":
         if not H:                                # model refuted; nothing to learn
             return "check" if "check" in acts else "call"
-        scored = [(V(H, hist + (a,), observer_card), a) for a in acts]
+        scored = [(V(H, hist + (a,), observer_card, mu), a) for a in acts]
         best = min(s for s, _ in scored)
         return min((a for s, a in scored if s == best), key=lambda a: ACTION_COST[a])
     raise ValueError(condition)
 
 
-def observer_action_dist(H, hist, observer_card, condition):
+def observer_action_dist(H, hist, observer_card, condition, mu=0.0):
     if condition == "random":
         acts = legal(hist)
         return {a: 1.0 / len(acts) for a in acts}
-    return {choose_observer_action(H, hist, observer_card, condition, None): 1.0}
+    return {choose_observer_action(H, hist, observer_card, condition, None, mu): 1.0}
 
 
 # ------------------------------------------------------ adversarial subject
@@ -332,35 +335,43 @@ def concealment(H, objective):
     return 0 if objective == "impersonate" else len(INTENTS)
 
 
+# Cost: a WEIGHTED objective, concealment - lam * E[chips lost], rather than
+# a hard budget. The recursion is already an expectation-max over the tree, so
+# a weight folds into the terminal value and every node stays a plain max; a
+# hard constraint on expected loss would need a Lagrangian (i.e. this lam,
+# found by search) or a constrained search over mixed strategies. lam = 0 is
+# the pure concealer; lam -> inf is a pure chip maximiser.
+
 @lru_cache(maxsize=None)
-def A(hist, belief, subject_card, condition, objective):
-    """Adversary's expected concealment from `hist` onward."""
+def A(hist, belief, subject_card, condition, objective, mu=0.0, lam=0.0):
+    """Adversary's expected (concealment - lam * chips lost) from `hist` on."""
     who = to_act(hist)
     if who == "terminal":
-        return sum(w * concealment(final_H(o, hist, subject_card), objective)
+        return sum(w * (concealment(final_H(o, hist, subject_card), objective)
+                        - lam * observer_payoff(hist, subject_card, o))
                    for o, w in belief)
     if who == "subject":
-        return max(A(hist + (a,), belief, subject_card, condition, objective)
+        return max(A(hist + (a,), belief, subject_card, condition, objective, mu, lam)
                    for a in legal(hist))
     if who == "observer":
         branches = {}
         for o, w in belief:
-            dist = observer_action_dist(observer_H(o, hist), hist, o, condition)
+            dist = observer_action_dist(observer_H(o, hist), hist, o, condition, mu)
             for a, p in dist.items():
                 if p > 0:
                     branches.setdefault(a, []).append((o, w * p))
-        return sum(A(hist + (a,), tuple(bl), subject_card, condition, objective)
+        return sum(A(hist + (a,), tuple(bl), subject_card, condition, objective, mu, lam)
                    for a, bl in branches.items())
     branches = {}                                # chance: board
     for o, w in belief:
         for b in DECK:
             if b not in (o, subject_card):
                 branches.setdefault(b, []).append((o, w / 4))
-    return sum(A(hist + ("board:" + b,), tuple(bl), subject_card, condition, objective)
+    return sum(A(hist + ("board:" + b,), tuple(bl), subject_card, condition, objective, mu, lam)
                for b, bl in branches.items())
 
 
-def adversary_belief(hist, subject_card, condition):
+def adversary_belief(hist, subject_card, condition, mu=0.0):
     """Weights over observer cards consistent with the observer's play so far."""
     belief = tuple((o, 1.0) for o in DECK if o != subject_card)
     prefix = ()
@@ -368,7 +379,8 @@ def adversary_belief(hist, subject_card, condition):
         if to_act(prefix) == "observer":
             new = []
             for o, w in belief:
-                p = observer_action_dist(observer_H(o, prefix), prefix, o, condition).get(t, 0.0)
+                p = observer_action_dist(observer_H(o, prefix), prefix, o,
+                                         condition, mu).get(t, 0.0)
                 if w * p > 0:
                     new.append((o, w * p))
             belief = tuple(new)
@@ -378,9 +390,9 @@ def adversary_belief(hist, subject_card, condition):
     return belief
 
 
-def adversarial_action(hist, subject_card, declared, condition, objective):
-    belief = adversary_belief(hist, subject_card, condition)
-    scores = {a: A(hist + (a,), belief, subject_card, condition, objective)
+def adversarial_action(hist, subject_card, declared, condition, objective, mu=0.0, lam=0.0):
+    belief = adversary_belief(hist, subject_card, condition, mu)
+    scores = {a: A(hist + (a,), belief, subject_card, condition, objective, mu, lam)
               for a in legal(hist)}
     preferred = policy(declared, subject_card, hist)
     best = max(scores.values())
@@ -389,7 +401,7 @@ def adversarial_action(hist, subject_card, declared, condition, objective):
 
 # --------------------------------------------------------------- one hand
 
-def play_hand(condition, rng, human=False, hand_no=0, subject="faithful"):
+def play_hand(condition, rng, human=False, hand_no=0, subject="faithful", mu=0.0, lam=0.0):
     """subject: faithful | adversarial:impersonate | adversarial:refute"""
     adversarial = subject.startswith("adversarial")
     objective = subject.split(":")[1] if adversarial else None
@@ -406,6 +418,8 @@ def play_hand(condition, rng, human=False, hand_no=0, subject="faithful"):
     H = initial_hypotheses(observer_card)
     trace = []
     subject_actions = deviations = 0
+    contradiction_at = None          # index in history at which H became empty
+    observer_moves_after = 0         # observer decisions taken after that point
 
     while True:
         who = to_act(hist)
@@ -421,14 +435,17 @@ def play_hand(condition, rng, human=False, hand_no=0, subject="faithful"):
             if human:
                 a = prompt_action(f"Round {round_seq(hist)[0]}, your move", legal(hist), faithful)
             elif adversarial:
-                a = adversarial_action(hist, subject_card, declared, condition, objective)
+                a = adversarial_action(hist, subject_card, declared, condition, objective, mu, lam)
             else:
                 a = faithful
             subject_actions += 1
             deviations += a != faithful
             H = tuple((i, c) for (i, c) in H if policy(i, c, hist) == a)
+            if not H and contradiction_at is None:
+                contradiction_at = len(hist)
         else:
-            a = choose_observer_action(H, hist, observer_card, condition, rng)
+            a = choose_observer_action(H, hist, observer_card, condition, rng, mu)
+            observer_moves_after += contradiction_at is not None
             if human:
                 print(f"  observer: {a}")
         hist = hist + (a,)
@@ -436,11 +453,13 @@ def play_hand(condition, rng, human=False, hand_no=0, subject="faithful"):
 
     if is_showdown(hist):
         H = tuple((i, c) for (i, c) in H if c == subject_card)
+        if not H and contradiction_at is None:
+            contradiction_at = "showdown"    # play fit some intent, the revealed card fit none
     final = intent_set(H)
     return {
         "hand": hand_no,
         "condition": condition,
-        "subject": subject,
+        "subject": subject, "mu": mu, "lam": lam,
         "subject_card": subject_card,
         "observer_card": observer_card,
         "board": board_of(hist),
@@ -452,6 +471,8 @@ def play_hand(condition, rng, human=False, hand_no=0, subject="faithful"):
         "exact": final == [declared],
         "misattributed": len(final) == 1 and final != [declared],
         "contradiction": len(final) == 0,
+        "contradiction_at": contradiction_at,   # history index, "showdown", or None
+        "observer_moves_after_contradiction": observer_moves_after,
         "subject_actions": subject_actions,
         "deviations": deviations,
         "card_revealed": is_showdown(hist),
@@ -559,6 +580,10 @@ def main():
                     choices=ADVERSARY_OBJECTIVES + ["both"],
                     help="impersonate: must still look like some intent; "
                          "refute: may break the observer's model (empty set)")
+    ap.add_argument("--mu", type=float, default=0.0,
+                    help="observer chip weight: minimise E[|H|] - mu * E[chips]")
+    ap.add_argument("--lam", type=float, default=0.0,
+                    help="adversary chip weight: maximise E[|H|] - lam * E[chips lost]")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--human", action="store_true", help="play as the subject")
     ap.add_argument("--log", metavar="PATH", help="write per-hand JSON records")
@@ -577,7 +602,8 @@ def main():
     for subj in subjects:
         for cond in conditions:
             rng = random.Random(args.seed)
-            rows = [play_hand(cond, rng, human=args.human, hand_no=k + 1, subject=subj)
+            rows = [play_hand(cond, rng, human=args.human, hand_no=k + 1, subject=subj,
+                              mu=args.mu, lam=args.lam)
                     for k in range(args.hands)]
             if args.human:
                 for r in rows:
