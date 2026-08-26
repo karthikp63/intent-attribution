@@ -166,13 +166,17 @@ def expected_posterior_size(H, action):
     )
 
 
-def choose_observer_action(H, legal, condition, rng):
+def choose_observer_action(H, legal, condition, rng, hist=None, observer_card=None,
+                           observer="greedy", mu=0.0):
     if condition == "passive":
         # A fixed, non-probing strategy: never raise, always see it through.
         return "check" if "check" in legal else "call"
     if condition == "random":
         return rng.choice(legal)
+    if condition == "adaptive" and observer == "lookahead":
+        return choose_lookahead_action(H, hist, observer_card, mu)
     if condition == "adaptive":
+        assert mu == 0.0, "chip-aware observer requires --observer lookahead"
         scored = [(expected_posterior_size(H, a), a) for a in legal]
         best = min(s for s, _ in scored)
         # Deterministic tie-break: prefer the cheaper action.
@@ -181,6 +185,92 @@ def choose_observer_action(H, legal, condition, rng):
     raise ValueError(condition)
 
 
+
+
+# ------------------------------------------------ history-based tree (Kuhn)
+#
+# A second, independent formulation of the same game as explicit histories,
+# used by the LOOKAHEAD observer and by the adversary. Kept separate from the
+# greedy code above so the two can be checked against each other.
+
+def to_act(hist):
+    if hist == ():
+        return "subject"
+    if hist in (("check",), ("bet",)):
+        return "observer"
+    if hist == ("check", "bet"):
+        return "subject"
+    return "terminal"
+
+
+def legal(hist):
+    return ["check", "bet"] if hist in ((), ("check",)) else ["fold", "call"]
+
+
+def subject_policy(intent, card, hist):
+    return opening_action(intent, card) if hist == () else response_action(intent, card)
+
+
+def is_showdown(hist):
+    return hist[-1] != "fold"
+
+
+def observer_payoff(hist, subject_card, observer_card):
+    if hist == ("bet", "fold"):
+        return -1
+    if hist == ("check", "bet", "fold"):
+        return 1
+    pot = 2 if "call" in hist else 1
+    return pot if RANK[observer_card] > RANK[subject_card] else -pot
+
+
+def observer_H(observer_card, hist):
+    H = initial_hypotheses(observer_card)
+    prefix = ()
+    for t in hist:
+        if to_act(prefix) == "subject":
+            H = [(i, c) for (i, c) in H if subject_policy(i, c, prefix) == t]
+        prefix += (t,)
+    return H
+
+
+def final_H(observer_card, hist, subject_card):
+    H = observer_H(observer_card, hist)
+    return filter_card(H, subject_card) if is_showdown(hist) else H
+
+
+ACTION_COST = {"check": 0, "fold": 0, "call": 1, "bet": 1}
+
+
+def V(H, hist, observer_card, mu=0.0):
+    """Exact lookahead: expected (final |intent set| - mu * observer chips)
+    if the observer plays optimally from here and the subject is faithful
+    to some hypothesis in H, uniform prior. mu = 0 is pure information."""
+    who = to_act(hist)
+    n = len(H)
+    if who == "terminal":
+        buckets = {}
+        for (i, c) in H:
+            buckets.setdefault(c if is_showdown(hist) else None, []).append((i, c))
+        size = sum(len(b) / n * len(intent_set(b)) for b in buckets.values())
+        chips = sum(observer_payoff(hist, c, observer_card) for (_, c) in H) / n
+        return size - mu * chips
+    if who == "subject":
+        buckets = {}
+        for (i, c) in H:
+            buckets.setdefault(subject_policy(i, c, hist), []).append((i, c))
+        return sum(len(b) / n * V(b, hist + (a,), observer_card, mu)
+                   for a, b in buckets.items())
+    return min(V(H, hist + (a,), observer_card, mu) for a in legal(hist))
+
+
+def choose_lookahead_action(H, hist, observer_card, mu):
+    acts = legal(hist)
+    if not H:
+        return "check" if "check" in acts else "call"
+    scored = [(V(H, hist + (a,), observer_card, mu), a) for a in acts]
+    best = min(s for s, _ in scored)
+    return min((a for s, a in scored if s == best), key=lambda a: ACTION_COST[a])
 
 # ------------------------------------------------------ adversarial subject
 #
@@ -192,69 +282,71 @@ def choose_observer_action(H, legal, condition, rng):
 # Ties break toward the declared policy (minimal deviation).
 
 def concealment(H):
-    """Adversary's objective. An empty set means the observer's model was
-    refuted outright, so it learned nothing: score it as the full space."""
+    """Adversary's objective. Kuhn never reaches an empty set, so the
+    impersonate/refute distinction of Leduc does not arise here."""
     return len(intent_set(H)) if H else len(INTENTS)
 
 
-def observer_action_dist(H, legal, condition):
+def observer_action_dist(H, hist, observer_card, condition, observer, mu):
     """The observer's action distribution as the subject can compute it."""
+    acts = legal(hist)
     if condition == "random":
-        return {a: 1.0 / len(legal) for a in legal}
-    return {choose_observer_action(H, legal, condition, None): 1.0}
+        return {a: 1.0 / len(acts) for a in acts}
+    return {choose_observer_action(H, acts, condition, None, hist, observer_card,
+                                   observer, mu): 1.0}
 
 
-def _adv_response_scores(subject_card, condition):
-    """Score each response (fold/call) after check -> observer bets.
-    Weighted by P(observer card) * P(observer bets | that card)."""
-    scores = {"fold": 0.0, "call": 0.0}
-    for o in CARDS:
-        if o == subject_card:
-            continue
-        H = filter_opening(initial_hypotheses(o), "check")
-        p_bet = 0.5 * observer_action_dist(H, ["check", "bet"], condition).get("bet", 0.0)
-        if p_bet == 0.0:
-            continue
-        scores["fold"] += p_bet * concealment(filter_response(H, "fold"))
-        scores["call"] += p_bet * concealment(filter_card(filter_response(H, "call"), subject_card))
-    return scores
+def A(hist, belief, subject_card, condition, observer, mu, lam):
+    """Adversary's expected (concealment - lam * chips lost) from `hist` on.
+    `belief` = unnormalised weights over the observer's card, updated by the
+    observer's own actions. Every max compares branches under one scaling."""
+    who = to_act(hist)
+    if who == "terminal":
+        return sum(w * (concealment(final_H(o, hist, subject_card))
+                        - lam * observer_payoff(hist, subject_card, o))
+                   for o, w in belief)
+    if who == "subject":
+        return max(A(hist + (a,), belief, subject_card, condition, observer, mu, lam)
+                   for a in legal(hist))
+    branches = {}
+    for o, w in belief:
+        dist = observer_action_dist(observer_H(o, hist), hist, o, condition, observer, mu)
+        for a, p in dist.items():
+            if p > 0:
+                branches.setdefault(a, []).append((o, w * p))
+    return sum(A(hist + (a,), bl, subject_card, condition, observer, mu, lam)
+               for a, bl in branches.items())
 
 
-def _adv_opening_value(action, subject_card, condition):
-    v = 0.0
-    for o in CARDS:
-        if o == subject_card:
-            continue
-        H = filter_opening(initial_hypotheses(o), action)
-        if action == "bet":
-            for a, p in observer_action_dist(H, ["fold", "call"], condition).items():
-                v += 0.5 * p * concealment(H if a == "fold" else filter_card(H, subject_card))
-        else:
-            p_check = observer_action_dist(H, ["check", "bet"], condition).get("check", 0.0)
-            v += 0.5 * p_check * concealment(filter_card(H, subject_card))
-    if action == "check":
-        v += max(_adv_response_scores(subject_card, condition).values())
-    return v
+def adversary_belief(hist, subject_card, condition, observer, mu):
+    belief = [(o, 1.0) for o in CARDS if o != subject_card]
+    prefix = ()
+    for t in hist:
+        if to_act(prefix) == "observer":
+            new = []
+            for o, w in belief:
+                p = observer_action_dist(observer_H(o, prefix), prefix, o,
+                                         condition, observer, mu).get(t, 0.0)
+                if w * p > 0:
+                    new.append((o, w * p))
+            belief = new
+        prefix += (t,)
+    return belief
 
 
-def _argmax_prefer(scores, preferred):
+def adversarial_action(hist, subject_card, declared, condition, observer, mu, lam):
+    belief = adversary_belief(hist, subject_card, condition, observer, mu)
+    scores = {a: A(hist + (a,), belief, subject_card, condition, observer, mu, lam)
+              for a in legal(hist)}
+    preferred = subject_policy(declared, subject_card, hist)
     best = max(scores.values())
-    return preferred if scores[preferred] == best else \
-        max(scores, key=lambda a: scores[a])
+    return preferred if scores[preferred] == best else max(scores, key=scores.get)
 
-
-def adversarial_opening(subject_card, declared, condition):
-    scores = {a: _adv_opening_value(a, subject_card, condition) for a in ["check", "bet"]}
-    return _argmax_prefer(scores, opening_action(declared, subject_card))
-
-
-def adversarial_response(subject_card, declared, condition):
-    scores = _adv_response_scores(subject_card, condition)
-    return _argmax_prefer(scores, response_action(declared, subject_card))
 
 # --------------------------------------------------------------- one hand
 
-def play_hand(condition, rng, human=False, hand_no=0, subject="faithful"):
+def play_hand(condition, rng, human=False, hand_no=0, subject="faithful",
+              observer="greedy", mu=0.0, lam=0.0):
     adversarial = subject == "adversarial"
     deck = CARDS[:]
     rng.shuffle(deck)
@@ -278,7 +370,7 @@ def play_hand(condition, rng, human=False, hand_no=0, subject="faithful"):
     if human:
         opening = prompt_action("Your move", ["check", "bet"], suggested=faithful_open)
     elif adversarial:
-        opening = adversarial_opening(subject_card, declared, condition)
+        opening = adversarial_action((), subject_card, declared, condition, observer, mu, lam)
     else:
         opening = faithful_open
     subject_actions += 1
@@ -287,8 +379,8 @@ def play_hand(condition, rng, human=False, hand_no=0, subject="faithful"):
     trace.append({"who": "subject", "action": opening, "surviving": intent_set(H)})
 
     if opening == "bet":
-        legal = ["fold", "call"]
-        obs_act = choose_observer_action(H, legal, condition, rng)
+        obs_act = choose_observer_action(H, ["fold", "call"], condition, rng,
+                                         ("bet",), observer_card, observer, mu)
         trace.append({"who": "observer", "action": obs_act, "surviving": intent_set(H)})
         if obs_act == "fold":
             observer_chips = -1
@@ -297,8 +389,8 @@ def play_hand(condition, rng, human=False, hand_no=0, subject="faithful"):
             H = filter_card(H, subject_card)
             observer_chips = 2 if RANK[observer_card] > RANK[subject_card] else -2
     else:
-        legal = ["check", "bet"]
-        obs_act = choose_observer_action(H, legal, condition, rng)
+        obs_act = choose_observer_action(H, ["check", "bet"], condition, rng,
+                                         ("check",), observer_card, observer, mu)
         trace.append({"who": "observer", "action": obs_act, "surviving": intent_set(H)})
         if obs_act == "check":
             card_revealed = True
@@ -310,7 +402,8 @@ def play_hand(condition, rng, human=False, hand_no=0, subject="faithful"):
                 resp = prompt_action("Observer bets. Your move", ["fold", "call"],
                                      suggested=faithful_resp)
             elif adversarial:
-                resp = adversarial_response(subject_card, declared, condition)
+                resp = adversarial_action(("check", "bet"), subject_card, declared,
+                                          condition, observer, mu, lam)
             else:
                 resp = faithful_resp
             subject_actions += 1
@@ -329,6 +422,7 @@ def play_hand(condition, rng, human=False, hand_no=0, subject="faithful"):
         "hand": hand_no,
         "condition": condition,
         "subject": subject,                  # log tag: faithful | adversarial
+        "observer": observer, "mu": mu, "lam": lam,
         "subject_card": subject_card,
         "observer_card": observer_card,
         "declared": declared,
@@ -439,6 +533,13 @@ def main():
                     choices=["faithful", "adversarial", "both"],
                     help="faithful: plays the declared policy; adversarial: declares "
                          "honestly, then plays to defeat the observer")
+    ap.add_argument("--observer", default="greedy", choices=["greedy", "lookahead"],
+                    help="adaptive rule: one-step greedy (original) or exact lookahead "
+                         "(same code shape as Leduc); must agree in Kuhn")
+    ap.add_argument("--mu", type=float, default=0.0,
+                    help="observer chip weight: minimise E[|H|] - mu * E[chips]")
+    ap.add_argument("--lam", type=float, default=0.0,
+                    help="adversary chip weight: maximise E[|H|] - lam * E[chips lost]")
     ap.add_argument("--human", action="store_true", help="play as the subject")
     ap.add_argument("--log", metavar="PATH", help="write per-hand JSON records")
     args = ap.parse_args()
@@ -452,7 +553,8 @@ def main():
     for subj in subjects:
         for cond in conditions:
             rng = random.Random(args.seed)      # same deals across conditions
-            rows = [play_hand(cond, rng, human=args.human, hand_no=k + 1, subject=subj)
+            rows = [play_hand(cond, rng, human=args.human, hand_no=k + 1, subject=subj,
+                              observer=args.observer, mu=args.mu, lam=args.lam)
                     for k in range(args.hands)]
             if args.human:
                 for r in rows:

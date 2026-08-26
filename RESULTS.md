@@ -27,6 +27,22 @@ value_bet}. It pays 1 chip/hand for that concealment — the adversary has no ch
 objective, which is a modelling choice to revisit (a cost-aware adversary is the
 natural next variant).
 
+### Greedy vs. lookahead observer (sanity check)
+
+Kuhn's original adaptive rule is one-step greedy (`expected_posterior_size`);
+Leduc's is exact lookahead over the rest of the hand. `kuhn_intent.py` now has
+an independent history-based implementation of the lookahead rule
+(`--observer lookahead`, same code shape as Leduc's `V`). Per-hand JSON logs
+were diffed record by record: seeds 1-3, all three conditions, both subject
+types, 36,000 hands -- **0 differing records**. The Leduc observer is a strict
+generalisation of the Kuhn one. Reproduce:
+
+```
+python3 kuhn_intent.py --hands 2000 --condition all --subject both --seed 1 --observer greedy    --log g.json
+python3 kuhn_intent.py --hands 2000 --condition all --subject both --seed 1 --observer lookahead --log l.json
+# then compare g.json and l.json ignoring the "observer" tag
+```
+
 ## Leduc (`leduc_intent.py`, 7 intents, 35 hypotheses, two betting rounds)
 
 ```
