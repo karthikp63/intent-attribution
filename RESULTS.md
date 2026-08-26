@@ -174,6 +174,92 @@ lam=1000         10.8% [10.4%,11.5%]      1.30 [1.29,1.31]   21.2% [20.2%,22.9%]
   bought; playing well delivers it.
 
 
+## Task 3: cost-aware observer — how much identification does a chip buy?
+
+Observer objective: minimise `E[final |intent set|] - mu * E[chips]`,
+computed by the same exact lookahead (`V`), with the expectation over
+hypotheses in the current set under the uniform prior. Parameterised the same
+way as the adversary so the two are directly comparable. `mu=0` is the
+information-only rule; `mu=1000` is effectively a chip maximiser among
+information ties. Subject: faithful. `python3 sweep.py observer`
+
+**Framing.** This moves the work *toward* goal recognition design, not away
+from it. GRD (Keren, Gal & Karpas 2014) minimises worst-case distinctiveness
+subject to not preventing agents from achieving their goals — it is a
+constrained optimisation. `mu` is our version of that constraint: the
+observer may not buy information at unbounded cost to its own goal.
+
+### Kuhn
+```
+setting                        exact                     H                 sound                 misID                contra               deviate                 chips
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+passive             6.8% [6.6%,7.0%]      2.85 [2.84,2.86]100.0% [100.0%,100.0%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]+0.001 [-0.011,+0.018]
+mu=0             20.8% [19.9%,21.6%]      2.06 [2.04,2.08]100.0% [100.0%,100.0%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]+0.411 [+0.375,+0.449]
+mu=0.1           20.8% [19.9%,21.6%]      2.06 [2.04,2.08]100.0% [100.0%,100.0%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]+0.411 [+0.375,+0.449]
+mu=0.25          20.8% [19.9%,21.6%]      2.06 [2.04,2.08]100.0% [100.0%,100.0%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]+0.411 [+0.375,+0.449]
+mu=0.5           17.4% [16.4%,17.9%]      2.09 [2.07,2.12]100.0% [100.0%,100.0%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]+0.513 [+0.473,+0.554]
+mu=1             17.4% [16.4%,17.9%]      2.09 [2.07,2.12]100.0% [100.0%,100.0%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]+0.513 [+0.473,+0.554]
+mu=2             17.4% [16.4%,17.9%]      2.09 [2.07,2.12]100.0% [100.0%,100.0%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]+0.513 [+0.473,+0.554]
+mu=4             17.4% [16.4%,17.9%]      2.09 [2.07,2.12]100.0% [100.0%,100.0%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]+0.513 [+0.473,+0.554]
+mu=1000          17.4% [16.4%,17.9%]      2.09 [2.07,2.12]100.0% [100.0%,100.0%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]+0.513 [+0.473,+0.554]
+```
+
+### Leduc
+```
+setting                        exact                     H                 sound                 misID                contra               deviate                 chips
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+passive          28.0% [27.4%,28.7%]      3.16 [3.12,3.23]100.0% [100.0%,100.0%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]-0.121 [-0.207,-0.072]
+mu=0             38.5% [37.8%,39.4%]      2.65 [2.62,2.66]100.0% [100.0%,100.0%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]-0.509 [-0.539,-0.490]
+mu=0.1           39.0% [38.4%,39.6%]      2.65 [2.63,2.66]100.0% [100.0%,100.0%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]+0.147 [+0.078,+0.210]
+mu=0.25          37.1% [36.8%,37.8%]      2.68 [2.67,2.70]100.0% [100.0%,100.0%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]+0.307 [+0.232,+0.389]
+mu=0.5           33.2% [32.8%,33.7%]      2.72 [2.71,2.74]100.0% [100.0%,100.0%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]+0.386 [+0.325,+0.462]
+mu=1             30.0% [29.6%,30.6%]      2.85 [2.85,2.86]100.0% [100.0%,100.0%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]+0.652 [+0.586,+0.745]
+mu=2             22.4% [22.1%,22.6%]      3.04 [3.03,3.06]100.0% [100.0%,100.0%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]+0.792 [+0.738,+0.862]
+mu=4             22.4% [22.1%,22.6%]      3.04 [3.03,3.06]100.0% [100.0%,100.0%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]+0.792 [+0.738,+0.862]
+mu=1000          22.4% [22.1%,22.6%]      3.04 [3.03,3.06]100.0% [100.0%,100.0%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]+0.792 [+0.738,+0.862]
+```
+
+### Cost-aware observer against the pure concealer (Leduc, `lam=0`)
+Impersonate:
+```
+setting                        exact                     H                 sound                 misID                contra               deviate                 chips
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+mu=0                0.0% [0.0%,0.0%]      4.64 [4.63,4.65]   65.7% [64.3%,67.0%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]   36.6% [36.4%,36.8%]+0.903 [+0.901,+0.907]
+mu=0.25             0.0% [0.0%,0.0%]      4.67 [4.66,4.68]   66.2% [64.8%,67.5%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]   35.8% [35.7%,36.0%]+0.903 [+0.901,+0.907]
+mu=1                0.0% [0.0%,0.0%]      4.81 [4.80,4.82]   67.9% [66.4%,69.0%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]   40.7% [40.4%,41.1%]+0.903 [+0.901,+0.907]
+```
+Refute:
+```
+setting                        exact                     H                 sound                 misID                contra               deviate                 chips
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+mu=0                1.5% [1.2%,1.8%]      1.64 [1.60,1.66]   23.3% [23.0%,23.9%]      6.4% [6.0%,6.7%]   56.7% [56.3%,57.5%]   51.9% [51.5%,52.7%]+0.433 [+0.279,+0.515]
+mu=0.25             0.4% [0.3%,0.4%]      1.51 [1.50,1.53]   22.4% [22.1%,22.6%]      0.5% [0.4%,0.6%]   63.3% [62.7%,63.7%]   56.7% [56.1%,57.4%]-0.062 [-0.160,+0.005]
+mu=1                0.0% [0.0%,0.0%]      0.93 [0.92,0.93]   13.2% [12.7%,13.6%]      0.0% [0.0%,0.0%]   79.5% [79.5%,79.7%]   48.1% [47.3%,48.7%]+0.350 [+0.272,+0.394]
+```
+
+**Reading.**
+
+* **Kuhn:** nothing to buy. `mu<=0.25` is identical to `mu=0`; from `mu=0.5`
+  up the observer trades 3.4 points of exact ID (20.8% → 17.4%) for +0.10
+  chips/hand and then stops changing. The information rule was already
+  nearly chip-optimal.
+* **Leduc: yes, there is a chip-neutral setting that keeps the advantage.**
+  `mu=0.1` turns −0.51/hand into **+0.15/hand** while exact ID goes from 38.5%
+  to **39.0%** and |H| stays 2.65 — the whole loss came from probes that
+  bought no information the observer could not get more cheaply. `mu=0.25`
+  keeps 37.1% at +0.31. Beyond that the trade is real: `mu=1` gives 30.0% at
+  +0.65, `mu>=2` gives 22.4% at +0.79 — still above passive (28.0%) on |H| but
+  below it on exact ID, so at that point the observer is a chip maximiser
+  that happens to learn things.
+* **Against the concealer, `mu` is not a defence.** Against impersonate the
+  chip-aware observer wins the same +0.90 and identifies nothing at any `mu`.
+  Against refute it makes things worse for identification (contradictions
+  rise to 80% at `mu=1`) but it does remove misattribution (6.4% → 0.5% →
+  0.0%): a chip-aware observer probes less, so it commits to a single wrong
+  intent less often. That is a reason to run `mu>0` even if the number one
+  cares about is misID.
+
+
 ## Commands
 
 ```

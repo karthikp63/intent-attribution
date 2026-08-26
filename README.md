@@ -2,7 +2,7 @@
 
 MVP for the Yale ROSE group project on machine inference of human intent.
 
-An observer watches a human play Kuhn poker and tries to work out *what the
+An observer watches a human play Kuhn poker (or Leduc hold'em) and tries to work out *what the
 human is trying to do* — not which card they hold. The observer maintains an
 explicit hypothesis set over intents, eliminates hypotheses inconsistent with
 what it sees, and chooses its own actions to learn as much as possible.
@@ -12,10 +12,14 @@ No LLM. No learned distance metric. Exact set elimination over a finite space.
 ## Quick start
 
 ```bash
-python3 kuhn_intent.py --hands 2000 --condition all --seed 1
+python3 kuhn_intent.py  --hands 2000 --condition all --seed 1               # Kuhn, faithful subject
+python3 kuhn_intent.py  --hands 2000 --condition all --seed 1 --subject both  # + adversarial subject
+python3 leduc_intent.py --hands 2000 --condition all --seed 1 --subject both  # Leduc hold'em
+python3 sweep.py all                                                          # cost sweeps, seeds 1-3
 ```
 
-Requires Python 3.8+. No dependencies.
+Requires Python 3.8+. No dependencies. Full numbers and interpretation in
+[RESULTS.md](RESULTS.md).
 
 ```
 condition   exact ID  |H| final   sound   reveal  chips/hand
@@ -72,6 +76,22 @@ uniform prior is inadequate.
 | `random` | uniform over legal actions |
 | `adaptive` | minimises expected posterior intent-set size |
 
+**Subjects.** `--subject faithful` plays the declared policy. `--subject
+adversarial` declares honestly (ground truth unchanged), then picks each action
+to maximise the observer's expected final intent-set size — it knows the
+observer's rule but not its card. In Leduc `--adversary impersonate` must stay
+consistent with some intent; `--adversary refute` may play like no intent at
+all.
+
+**Costs.** Both sides can be made chip-aware with a weighted objective:
+`--lam` (adversary: concealment − λ·chips lost) and `--mu` (observer:
+|H| − μ·chips). `lam=mu=0` is the pure information game; large values are
+chip maximisers. `sweep.py` produces the curves.
+
+**Leduc observer.** `leduc_intent.py` uses exact lookahead over the rest of
+the hand (`V`) instead of the one-step greedy rule; in Kuhn the two are
+verified identical hand-for-hand (`--observer lookahead`).
+
 ## Metrics
 
 | metric | meaning |
@@ -81,6 +101,9 @@ uniform prior is inadequate.
 | `sound` | declared intent never wrongly eliminated |
 | `reveal` | fraction of hands reaching showdown |
 | `chips/hand` | observer's mean profit — the cost side of the information trade |
+| `misID` | set collapsed to exactly one intent, the wrong one |
+| `contra` | every hypothesis eliminated: the play matched no intent (Leduc) |
+| `deviate` | fraction of subject decisions off the declared policy |
 
 `|H| final` is the project's working proxy for **worst-case distinctiveness**,
 the metric from the goal recognition design literature (Keren, Gal & Karpas,
@@ -117,11 +140,12 @@ checking reveals only the card.
 ## Roadmap
 
 - [x] Kuhn poker, 5 intents, exact elimination, three-condition comparison
+- [x] Adversarial condition — subject instructed to defeat the observer
+- [x] Leduc hold'em (larger tree, still enumerable)
+- [x] Cost-aware adversary and observer (λ / μ sweeps)
 - [ ] Human pilot — soundness rate for real subjects
-- [ ] Leduc hold'em (larger tree, still enumerable)
 - [ ] LLM as *proposer only* — suggests hypotheses, symbolic layer validates;
       measure the rejection rate
-- [ ] Adversarial condition — subject instructed to defeat the observer
 - [ ] Concordia wrapper: custom Game Master delegating resolution to this code
 
 ## Background
