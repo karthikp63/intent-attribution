@@ -13,7 +13,8 @@ No LLM. No learned distance metric. Exact set elimination over a finite space.
 Usage:
     python kuhn_intent.py --hands 200 --condition all
     python kuhn_intent.py --hands 200 --condition all --log runs.json
-    python kuhn_intent.py --human --hands 10
+    python kuhn_intent.py --hands 2000 --condition all --subject both
+    python kuhn_intent.py --human --hands 10 --subject adversarial
 """
 
 import argparse
@@ -180,16 +181,88 @@ def choose_observer_action(H, legal, condition, rng):
     raise ValueError(condition)
 
 
+
+# ------------------------------------------------------ adversarial subject
+#
+# The subject still DECLARES honestly (ground truth is unchanged) but then
+# plays to defeat the observer: at each decision it picks the action that
+# maximises the observer's expected final intent-set size. Worst case, as in
+# the GRD literature: the subject knows the observer's selection rule and
+# condition, but not the observer's card (uniform over the other two).
+# Ties break toward the declared policy (minimal deviation).
+
+def concealment(H):
+    """Adversary's objective. An empty set means the observer's model was
+    refuted outright, so it learned nothing: score it as the full space."""
+    return len(intent_set(H)) if H else len(INTENTS)
+
+
+def observer_action_dist(H, legal, condition):
+    """The observer's action distribution as the subject can compute it."""
+    if condition == "random":
+        return {a: 1.0 / len(legal) for a in legal}
+    return {choose_observer_action(H, legal, condition, None): 1.0}
+
+
+def _adv_response_scores(subject_card, condition):
+    """Score each response (fold/call) after check -> observer bets.
+    Weighted by P(observer card) * P(observer bets | that card)."""
+    scores = {"fold": 0.0, "call": 0.0}
+    for o in CARDS:
+        if o == subject_card:
+            continue
+        H = filter_opening(initial_hypotheses(o), "check")
+        p_bet = 0.5 * observer_action_dist(H, ["check", "bet"], condition).get("bet", 0.0)
+        if p_bet == 0.0:
+            continue
+        scores["fold"] += p_bet * concealment(filter_response(H, "fold"))
+        scores["call"] += p_bet * concealment(filter_card(filter_response(H, "call"), subject_card))
+    return scores
+
+
+def _adv_opening_value(action, subject_card, condition):
+    v = 0.0
+    for o in CARDS:
+        if o == subject_card:
+            continue
+        H = filter_opening(initial_hypotheses(o), action)
+        if action == "bet":
+            for a, p in observer_action_dist(H, ["fold", "call"], condition).items():
+                v += 0.5 * p * concealment(H if a == "fold" else filter_card(H, subject_card))
+        else:
+            p_check = observer_action_dist(H, ["check", "bet"], condition).get("check", 0.0)
+            v += 0.5 * p_check * concealment(filter_card(H, subject_card))
+    if action == "check":
+        v += max(_adv_response_scores(subject_card, condition).values())
+    return v
+
+
+def _argmax_prefer(scores, preferred):
+    best = max(scores.values())
+    return preferred if scores[preferred] == best else \
+        max(scores, key=lambda a: scores[a])
+
+
+def adversarial_opening(subject_card, declared, condition):
+    scores = {a: _adv_opening_value(a, subject_card, condition) for a in ["check", "bet"]}
+    return _argmax_prefer(scores, opening_action(declared, subject_card))
+
+
+def adversarial_response(subject_card, declared, condition):
+    scores = _adv_response_scores(subject_card, condition)
+    return _argmax_prefer(scores, response_action(declared, subject_card))
+
 # --------------------------------------------------------------- one hand
 
-def play_hand(condition, rng, human=False, hand_no=0):
+def play_hand(condition, rng, human=False, hand_no=0, subject="faithful"):
+    adversarial = subject == "adversarial"
     deck = CARDS[:]
     rng.shuffle(deck)
     subject_card, observer_card = deck[0], deck[1]
 
     # --- the declaration. Made BEFORE acting. Never shown to the observer.
     if human:
-        declared = prompt_declaration(subject_card, observer_card, hand_no)
+        declared = prompt_declaration(subject_card, observer_card, hand_no, adversarial)
     else:
         declared = rng.choice(INTENTS)
 
@@ -197,16 +270,19 @@ def play_hand(condition, rng, human=False, hand_no=0):
     trace = []
     observer_chips = 0
     subject_actions = 0
+    deviations = 0
     card_revealed = False
 
     # --- opening node -------------------------------------------------------
+    faithful_open = opening_action(declared, subject_card)
     if human:
-        opening = prompt_action(
-            "Your move", ["check", "bet"], suggested=opening_action(declared, subject_card)
-        )
+        opening = prompt_action("Your move", ["check", "bet"], suggested=faithful_open)
+    elif adversarial:
+        opening = adversarial_opening(subject_card, declared, condition)
     else:
-        opening = opening_action(declared, subject_card)
+        opening = faithful_open
     subject_actions += 1
+    deviations += opening != faithful_open
     H = filter_opening(H, opening)
     trace.append({"who": "subject", "action": opening, "surviving": intent_set(H)})
 
@@ -229,15 +305,16 @@ def play_hand(condition, rng, human=False, hand_no=0):
             H = filter_card(H, subject_card)
             observer_chips = 1 if RANK[observer_card] > RANK[subject_card] else -1
         else:
+            faithful_resp = response_action(declared, subject_card)
             if human:
-                resp = prompt_action(
-                    "Observer bets. Your move",
-                    ["fold", "call"],
-                    suggested=response_action(declared, subject_card),
-                )
+                resp = prompt_action("Observer bets. Your move", ["fold", "call"],
+                                     suggested=faithful_resp)
+            elif adversarial:
+                resp = adversarial_response(subject_card, declared, condition)
             else:
-                resp = response_action(declared, subject_card)
+                resp = faithful_resp
             subject_actions += 1
+            deviations += resp != faithful_resp
             H = filter_response(H, resp)
             trace.append({"who": "subject", "action": resp, "surviving": intent_set(H)})
             if resp == "fold":
@@ -251,6 +328,7 @@ def play_hand(condition, rng, human=False, hand_no=0):
     return {
         "hand": hand_no,
         "condition": condition,
+        "subject": subject,                  # log tag: faithful | adversarial
         "subject_card": subject_card,
         "observer_card": observer_card,
         "declared": declared,
@@ -259,6 +337,8 @@ def play_hand(condition, rng, human=False, hand_no=0):
         "sound": declared in final,          # was the truth ever eliminated?
         "exact": final == [declared],        # pinned down to one intent
         "subject_actions": subject_actions,
+        "deviations": deviations,            # subject moves off the declared policy
+        "misattributed": len(final) == 1 and final != [declared],
         "card_revealed": card_revealed,
         "observer_chips": observer_chips,
         "trace": trace,
@@ -267,7 +347,17 @@ def play_hand(condition, rng, human=False, hand_no=0):
 
 # ------------------------------------------------------------- human prompts
 
-def prompt_declaration(card, observer_card, hand_no):
+ADVERSARIAL_BRIEF = """
+ADVERSARIAL CONDITION. Declare your intent honestly -- that is the ground
+truth and it is never shown to the observer. Then play to DEFEAT the
+observer: make it as hard as possible for it to work out what you declared.
+You may depart from the suggested action whenever you like.
+"""
+
+
+def prompt_declaration(card, observer_card, hand_no, adversarial=False):
+    if adversarial and hand_no == 1:
+        print(ADVERSARIAL_BRIEF)
     print("\n" + "=" * 62)
     print(f"HAND {hand_no}   your card: {card}   (observer holds {observer_card}"
           f" -- shown to you only for calibration)")
@@ -311,20 +401,27 @@ def summarise(rows):
         "mean_final_set": sum(r["final_size"] for r in rows) / n,
         "mean_chips": sum(r["observer_chips"] for r in rows) / n,
         "reveal_rate": sum(r["card_revealed"] for r in rows) / n,
+        "misattribution": sum(r["misattributed"] for r in rows) / n,
+        "deviation_rate": sum(r["deviations"] for r in rows)
+                          / max(1, sum(r["subject_actions"] for r in rows)),
     }
 
 
 def print_table(results):
-    hdr = f"{'condition':<10} {'exact ID':>9} {'|H| final':>10} {'sound':>7} {'reveal':>8} {'chips/hand':>11}"
+    hdr = (f"{'condition':<22} {'exact ID':>9} {'|H| final':>10} {'sound':>7} {'misID':>6} "
+           f"{'reveal':>7} {'deviate':>8} {'chips/hand':>11}")
     print("\n" + hdr)
     print("-" * len(hdr))
     for cond, s in results.items():
-        print(f"{cond:<10} {s['exact_id_rate']:>8.1%} {s['mean_final_set']:>10.2f} "
-              f"{s['soundness']:>6.0%} {s['reveal_rate']:>7.0%} {s['mean_chips']:>+11.3f}")
+        print(f"{cond:<22} {s['exact_id_rate']:>8.1%} {s['mean_final_set']:>10.2f} "
+              f"{s['soundness']:>6.0%} {s['misattribution']:>6.1%} {s['reveal_rate']:>7.0%} "
+              f"{s['deviation_rate']:>8.1%} {s['mean_chips']:>+11.3f}")
     print()
     print("exact ID   = hypothesis set collapsed to exactly the declared intent")
     print("|H| final  = mean number of intents still standing at hand's end (lower is better)")
-    print("sound      = declared intent never wrongly eliminated (should be 100% for a faithful subject)")
+    print("sound      = declared intent never wrongly eliminated (100% by construction for a faithful subject)")
+    print("misID      = set collapsed to exactly one intent, and it is the wrong one")
+    print("deviate    = fraction of subject decisions that departed from the declared policy")
     print("reveal     = fraction of hands reaching showdown (card revealed)")
     print("chips/hand = observer's mean profit; the cost side of the information trade")
 
@@ -338,6 +435,10 @@ def main():
     ap.add_argument("--condition", default="all",
                     choices=["adaptive", "passive", "random", "all"])
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--subject", default="faithful",
+                    choices=["faithful", "adversarial", "both"],
+                    help="faithful: plays the declared policy; adversarial: declares "
+                         "honestly, then plays to defeat the observer")
     ap.add_argument("--human", action="store_true", help="play as the subject")
     ap.add_argument("--log", metavar="PATH", help="write per-hand JSON records")
     args = ap.parse_args()
@@ -345,19 +446,21 @@ def main():
     conditions = ["passive", "random", "adaptive"] if args.condition == "all" \
         else [args.condition]
 
-    all_rows, results = [], {}
-    for cond in conditions:
-        rng = random.Random(args.seed)      # same deals across conditions
-        rows = [play_hand(cond, rng, human=args.human, hand_no=k + 1)
-                for k in range(args.hands)]
-        if args.human:
-            for r in rows:
-                print(f"\n  observer's surviving intents: {', '.join(r['final_set'])}")
-                print(f"  you declared: {r['declared']}   ->  "
-                      f"{'PINNED' if r['exact'] else ('in set' if r['sound'] else 'ELIMINATED')}")
-        all_rows += rows
-        results[cond] = summarise(rows)
+    subjects = ["faithful", "adversarial"] if args.subject == "both" else [args.subject]
 
+    all_rows, results = [], {}
+    for subj in subjects:
+        for cond in conditions:
+            rng = random.Random(args.seed)      # same deals across conditions
+            rows = [play_hand(cond, rng, human=args.human, hand_no=k + 1, subject=subj)
+                    for k in range(args.hands)]
+            if args.human:
+                for r in rows:
+                    print(f"\n  observer's surviving intents: {', '.join(r['final_set'])}")
+                    print(f"  you declared: {r['declared']}   ->  "
+                          f"{'PINNED' if r['exact'] else ('in set' if r['sound'] else 'ELIMINATED')}")
+            all_rows += rows
+            results[f"{cond}/{subj}"] = summarise(rows)
     print_table(results)
 
     if args.log:
