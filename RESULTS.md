@@ -260,6 +260,78 @@ mu=1                0.0% [0.0%,0.0%]      0.93 [0.92,0.93]   13.2% [12.7%,13.6%]
   cares about is misID.
 
 
+## Hardening the misattribution result
+
+The refute adversary (Leduc, adaptive observer, `mu=lam=0`) makes the
+observer collapse onto exactly one *wrong* intent. `python3 sweep.py harden`:
+
+```
+seed 1: misID 134/2000 = 6.7%   95% Wilson CI [5.7%, 7.9%]
+seed 2: misID 128/2000 = 6.4%   95% Wilson CI [5.4%, 7.6%]
+seed 3: misID 120/2000 = 6.0%   95% Wilson CI [5.0%, 7.1%]
+pooled: misID 382/6000 = 6.4%   95% Wilson CI [5.8%, 7.0%]
+pooled: contradiction 3403/6000 = 56.7%   95% Wilson CI [55.5%, 58.0%]
+
+### Do contradiction and misattribution co-occur within a hand?
+hands with both: 0  (structurally impossible: the hypothesis set only shrinks, so a hand that reaches the empty set ends empty; misID means it never did)
+
+### Is the contradiction visible before the observer commits?
+contradiction hands: 3403
+  H became empty BEFORE at least one observer decision: 397 (11.7%)
+  H became empty at the subject's last move (no observer decision left): 540
+  H became empty only at showdown (play fit an intent; the card fit none):   2466 (72.5%)
+  where H emptied (history index or showdown) -> count: 4:25, 6:912, showdown:2466
+  observer chips/hand in those 397 hands (it currently just plays passive after the model is refuted): -0.612
+
+### Misattributed hands: what did the observer see?
+  declared give_up      -> observer concluded value_bet    x37
+  declared value_bet    -> observer concluded represent    x34
+  declared probe        -> observer concluded value_bet    x34
+  declared pot_control  -> observer concluded probe        x32
+  declared value_bet    -> observer concluded probe        x30
+  declared represent    -> observer concluded bluff        x30
+  declared pot_control  -> observer concluded value_bet    x29
+  declared bluff        -> observer concluded value_bet    x29
+  declared give_up      -> observer concluded probe        x28
+  declared trap         -> observer concluded value_bet    x26
+  declared trap         -> observer concluded probe        x26
+  declared bluff        -> observer concluded probe        x25
+  declared represent    -> observer concluded value_bet    x22
+  most common histories:
+    bet call board:J1 bet fold                                   x93
+    bet call board:J0 bet fold                                   x84
+    bet call board:K0 check check                                x77
+    bet call board:K1 check check                                x64
+    check check board:Q0 bet fold                                x25
+```
+
+* **The number holds up.** Pooled over 6000 hands, misID = 6.4%, 95% Wilson
+  CI [5.8%, 7.0%]; per-seed 6.0–6.7%. Contradiction = 56.7% [55.5%, 58.0%].
+  Note from Task 2 that misID is *far* higher (41–55%) against a
+  chip-maximising subject than against the pure refuter; 6.4% is the
+  conservative end.
+* **Contradiction and misattribution never co-occur** in a hand, by
+  construction: the hypothesis set only shrinks, so once empty it stays
+  empty, and misID means it never emptied. They are two different failure
+  modes of the same assumption (that the subject is faithful to some intent).
+* **Is "no intent explains this" a usable signal? Mostly not, as things
+  stand.** Of 3403 contradiction hands, only 397 (11.7%) emptied the set
+  before an observer decision remained. 540 emptied at the subject's last
+  move, and **2466 (72.5%) emptied only at showdown** — the betting was
+  consistent with some intent, and it was the revealed card that fit none.
+  So the exact-elimination observer detects deception mostly after the fact.
+  Where it does see it early it currently just plays passive and loses
+  −0.61/hand in those hands; a "fold on refutation" rule is the obvious
+  cheap improvement, and it would be measurable on exactly these 397 hands.
+* **What the observer sees when it is wrong.** The commonest misattributed
+  histories are `bet call board:J bet fold` and `bet call board:K check
+  check` — the subject bets round 1 (looking like value_bet/bluff/probe/
+  pot_control) and then plays round 2 in a way only one of them would. Every
+  intent gets misread as `value_bet` or `probe` most often: those are the two
+  policies that bet round 1 with the widest range of cards, so they are the
+  easiest to impersonate. This is the Paris-neuron point in our own data —
+  a bet looks like value only until you ask what else produces that bet.
+
 ## Commands
 
 ```
