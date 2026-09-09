@@ -17,6 +17,8 @@ python3 kuhn_intent.py  --hands 2000 --condition all --seeds 1 2 3 --subject bot
 python3 leduc_intent.py --hands 2000 --condition all --seeds 1 2 3 --subject both  # Leduc hold'em
 python3 sweep.py verify                                                       # gate: Kuhn greedy == lookahead
 python3 sweep.py deception                                                    # deception-aware observer
+python3 sweep.py misattribute                                                 # the in-model attack
+python3 proposer.py --backend fixture                                         # LLM proposer rejection rate
 python3 sweep.py all                                                          # gate + cost sweeps, seeds 1-3
 ```
 
@@ -214,9 +216,31 @@ checking reveals only the card.
 - [x] Deception-aware observer — abstain once the model has been refuted
 - [x] Consistent misattributor — in-model attack that defeats the above
 - [ ] Human pilot — soundness rate for real subjects
-- [ ] LLM as *proposer only* — suggests hypotheses, symbolic layer validates;
-      measure the rejection rate
+- [x] LLM as *proposer only* — symbolic layer validates; rejection rate measured
+      (12.5% constrained / 60% free-form / 75% repair)
 - [ ] Concordia wrapper: custom Game Master delegating resolution to this code
+
+## LLM as proposer
+
+`proposer.py`. The LLM **proposes**, never decides, and is never in the trust
+path: it does not eliminate hypotheses, rank them, or select probes. Every
+proposal is compiled to a total 36-cell policy and validated, or rejected.
+
+| strategy | rejected | n |
+|---|---|---|
+| constrained (fill our schema) | 12.5% | 8 |
+| free-form prose + symbolic compile | 60% | 10 |
+| repair (explain a contradiction) | 75% | 4 |
+
+The rate rises as the task moves from filling in our schema toward doing
+something we could not do ourselves — and **no rejected proposal announces its
+own invalidity in its text**. That is the argument for keeping the validator.
+Proposals are recorded in `fixtures/proposals.json` and were committed before
+the classifier ran; see RESULTS.md for the provenance caveat. `--backend api`
+regenerates them live (stdlib `urllib`, needs `ANTHROPIC_API_KEY`).
+
+Isolated by design: `sweep.py`, `kuhn_intent.py` and `leduc_intent.py` never
+import it, so the experiments and the verification gate stay dependency-free.
 
 ## Background
 

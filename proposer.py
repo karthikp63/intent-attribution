@@ -183,52 +183,92 @@ def compile_constrained(obj):
 
 _ACTIONS = ["check", "bet", "fold", "call", "raise"]
 _RANKWORD = {"jack": "J", "queen": "Q", "king": "K", "j": "J", "q": "Q", "k": "K"}
+_NUM = {"one": 1, "two": 2, "1": 1, "2": 2, "first": 1, "second": 2}
+
+# Condition phrases, longest/most specific first. Matched text is REMOVED from
+# the clause before actions are scanned, so "facing a bet I raise" does not read
+# the condition's "bet" as the action taken.
+_SIT_PATTERNS = [
+    ("facing_raise", r"\b(?:facing|against|if|when|to)\s+(?:a\s+|any\s+|they\s+|he\s+|she\s+|someone\s+)?"
+                     r"(?:re-?)?raises?(?:\s+me(?:\s+back)?)?\b"),
+    ("facing_raise", r"\bif\s+(?:they|he|she|someone)\s+(?:comes?\s+back|re-?raises?)\b"),
+    ("facing_bet",   r"\b(?:facing|against|if|when|to)\s+(?:a\s+|any\s+|they\s+|he\s+|she\s+|someone\s+)?"
+                     r"bets?(?:\s+(?:at|into)\s+me)?\b"),
+    ("facing_bet",   r"\b(?:they|he|she|someone|the\s+opponent)\s+bets?\b"),
+    ("facing_bet",   r"\bbet\s+into\s+me\b"),
+    ("open",         r"\b(?:first\s+to\s+act|when\s+i\s+am\s+first|i\s+open|opening|"
+                     r"checked\s+to(?:\s+me)?|lead(?:ing)?\s+out)\b"),
+]
+
+_DEFAULT_RE = r"\b(otherwise|else|any\s+other|in\s+all\s+other|the\s+rest|everything\s+else|anything\s+else)\b"
+
+
+def _ranks_in(text):
+    rs = set()
+    for w, r in _RANKWORD.items():
+        if re.search(r"\b" + w + r"\b", text):
+            rs.add(r)
+    if re.search(r"\bpair(ed|s)?\b", text):
+        rs.add("__pair__")
+    if re.search(r"\b(strong|premium|nuts|value)\b", text) and not rs:
+        rs |= {"K", "__pair__"}
+    if re.search(r"\b(weak|bad|air|nothing)\b", text) and not rs:
+        rs |= {"J"}
+    if re.search(r"\b(any|anything|always|regardless|all|every|whatever|no matter)\b", text):
+        rs |= set(RANKS) | {"__pair__"}
+    return rs
 
 
 def _parse_clause(clause):
-    """One rule -> (predicate, action), or None if nothing usable is in it."""
-    c = clause.lower().strip()
-    act = next((a for a in _ACTIONS if re.search(r"\b" + a + r"(s|ing)?\b", c)), None)
-    if not act:
-        return None
+    """One clause -> a LIST of rules. A clause can carry several actions
+    ('raise with a pair and call otherwise'), and each gets its own rule."""
+    c = " " + clause.lower().strip() + " "
 
     rnd = None
-    if re.search(r"\b(round\s*1|first round|pre-?board|preflop)\b", c):
+    m = re.search(r"\bround\s+(one|two|1|2)\b", c) or re.search(r"\b(first|second)\s+round\b", c)
+    if m:
+        rnd = _NUM[m.group(1)]
+    elif re.search(r"\b(pre-?board|preflop|street\s+one)\b", c):
         rnd = 1
-    elif re.search(r"\b(round\s*2|second round|post-?board|after the board|on the board)\b", c):
+    elif re.search(r"\b(post-?board|after\s+the\s+board|on\s+the\s+board|second\s+barrel|street\s+two)\b", c):
         rnd = 2
 
-    if re.search(r"\b(facing|against|if|when)\b[^.]*\braise[sd]?\b", c) and act != "raise":
-        sit = "facing_raise"
-    elif re.search(r"\b(facing|against|if|when)\b[^.]*\bbet(s|ting)?\b", c) and act != "bet":
-        sit = "facing_bet"
-    elif re.search(r"\b(open|opening|first to act|checked to|lead)\b", c):
-        sit = "open"
-    else:
-        sit = None
+    sit = None
+    for name, pat in _SIT_PATTERNS:
+        m = re.search(pat, c)
+        if m:
+            sit = name
+            c = c[:m.start()] + " , " + c[m.end():]      # remove the condition text
+            break
 
-    ranks = set()
-    for w, r in _RANKWORD.items():
-        if re.search(r"\b" + w + r"\b", c):
-            ranks.add(r)
-    if re.search(r"\bpair(ed|s)?\b", c):
-        ranks |= {"__pair__"}
-    if re.search(r"\b(strong|premium|nuts|value)\b", c) and not ranks:
-        ranks |= {"K", "__pair__"}
-    if re.search(r"\b(weak|bad|air|nothing)\b", c) and not ranks:
-        ranks |= {"J"}
-    if re.search(r"\b(any|anything|always|regardless|all)\b", c):
-        ranks |= set(RANKS) | {"__pair__"}
-
-    return {"rnd": rnd, "sit": sit, "ranks": ranks, "act": act,
-            "default": bool(re.search(r"\b(otherwise|else|any other|in all other)\b", c))}
+    # Scan the remainder for action verbs; each takes the words after it, up to
+    # the next action verb, as its rank restriction.
+    hits = []
+    for m in re.finditer(r"\b(" + "|".join(_ACTIONS) + r")(?:s|es|ing|ed)?\b", c):
+        hits.append((m.start(), m.end(), m.group(1)))
+    if not hits:
+        return []
+    rules = []
+    for k, (st, en, act) in enumerate(hits):
+        scope = c[en: hits[k + 1][0] if k + 1 < len(hits) else len(c)]
+        rules.append({"rnd": rnd, "sit": sit, "ranks": _ranks_in(scope), "act": act,
+                      "default": bool(re.search(_DEFAULT_RE, scope))})
+    # A clause-wide "otherwise" with no ranks on the last action makes it the default.
+    return rules
 
 
 def compile_freeform(text):
-    """Prose -> table. Later clauses win; a clause flagged 'otherwise' fills only
-    what is still undetermined."""
-    clauses = [c for c in re.split(r"[.;\n]|,\s*(?=and\b|but\b|otherwise\b)", text) if c.strip()]
-    rules = [r for r in (_parse_clause(c) for c in clauses) if r]
+    """Prose -> table. Rules apply in order, later ones overwriting earlier;
+    a rule flagged 'otherwise' fills only cells still undetermined at the end."""
+    # Split sentences, and also split a sentence that carries a SECOND condition
+    # ("... facing a bet I call, and facing a raise I fold"): one clause can only
+    # hold one condition, so a second one has to start a new clause.
+    clauses = [c for c in re.split(
+        r"[.;\n]"
+        r"|,\s+(?=and\s+(?:facing|against|if|when|in\s+round)|otherwise\b|but\b)"
+        r"|,\s+(?=(?:and\s+)?i\s+\w+)",           # comma-joined independent clauses
+        text, flags=re.I) if c.strip()]
+    rules = [r for c in clauses for r in _parse_clause(c)]
     if not rules:
         return {}, "no rule of the form <condition> -> <action> could be extracted"
 
@@ -236,18 +276,16 @@ def compile_freeform(text):
     for r in rules:
         rnds = [r["rnd"]] if r["rnd"] else [1, 2]
         sits = [r["sit"]] if r["sit"] else SITUATIONS
-        target = defaults if r["default"] else None
         for (rnd, sit, rank_, b) in CELLS:
             if rnd not in rnds or sit not in sits:
                 continue
             if r["act"] not in LEGAL[sit]:
                 continue
             hit = (rank_ in r["ranks"]) or ("__pair__" in r["ranks"] and b == rank_)
-            if not r["ranks"] or hit:
-                if target is None:
-                    table[(rnd, sit, rank_, b)] = r["act"]
-                else:
-                    target.append(((rnd, sit, rank_, b), r["act"]))
+            if r["default"]:
+                defaults.append(((rnd, sit, rank_, b), r["act"]))
+            elif not r["ranks"] or hit:
+                table[(rnd, sit, rank_, b)] = r["act"]
     for cell, a in defaults:
         table.setdefault(cell, a)
     return table, None
@@ -344,3 +382,164 @@ def api_call(prompt, model, max_tokens=1500):
 def load_fixture(path):
     with open(path) as f:
         return json.load(f)
+
+
+# ------------------------------------------------------------------- runner
+
+def wilson(k, n, z=1.96):
+    if n == 0:
+        return 0.0, 0.0, 0.0
+    p = k / n
+    d = 1 + z * z / n
+    c = (p + z * z / (2 * n)) / d
+    import math
+    h = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / d
+    return p, c - h, c + h
+
+
+CATEGORIES = ["ill_formed", "inconsistent", "duplicate", "novel_valid"]
+results_gap = {}          # proposal name -> cells left undetermined
+
+
+def observations_for(hist, card):
+    """The subject's own moves in this history, plus the cards still possible.
+    The card is revealed at showdown, so the consistency test is against it."""
+    moves, prefix = [], ()
+    for t in hist:
+        if not t.startswith("board:") and L.to_act(prefix) == "subject":
+            moves.append((prefix, t))
+        prefix += (t,)
+    return {"moves": moves, "cards": [card]}
+
+
+def _undetermined(table):
+    return len([c for c in CELLS if c not in table])
+
+
+def report(title, results, note=""):
+    n = len(results)
+    print(f"\n### {title}   (n = {n})")
+    if note:
+        print(note)
+    counts = Counter(cat for cat, _, _ in results)
+    rejected = n - counts["novel_valid"]
+    print(f"\n{'category':<16}{'count':>7}{'rate':>9}   {'95% Wilson CI':>18}")
+    print("-" * 54)
+    for cat in CATEGORIES:
+        k = counts[cat]
+        p, lo, hi = wilson(k, n)
+        print(f"{cat:<16}{k:>7}{p:>9.1%}   [{lo:>6.1%}, {hi:>6.1%}]")
+    p, lo, hi = wilson(rejected, n)
+    print("-" * 54)
+    print(f"{'REJECTED':<16}{rejected:>7}{p:>9.1%}   [{lo:>6.1%}, {hi:>6.1%}]")
+    print("\n  per proposal:")
+    for cat, name, why in results:
+        print(f"    {name:<22} {cat:<14} {why[:70]}")
+    # How incomplete, for the ones that failed to be total. "missing 1 of 36"
+    # and "missing all 36" are different failures: the first is a policy with a
+    # gap, the second is not a policy at all.
+    gaps = sorted((g, nm) for cat, nm, g in
+                  ((c, nm, results_gap.get(nm)) for c, nm, _ in results)
+                  if results_gap.get(nm))
+    if gaps:
+        print("\n  cells undetermined (of 36), for proposals that were not total:")
+        for g, nm in gaps:
+            print(f"    {nm:<22} {g:>2}  {'|' * min(g, 36)}")
+    return counts
+
+
+def run(fixture, backend, model, n_api):
+    print("=" * 74)
+    print("LLM AS PROPOSER -- rejection rate against a symbolic validator")
+    print("=" * 74)
+    prov = fixture.get("provenance", {})
+    if backend == "fixture":
+        print(f"\nbackend: fixture   model: {prov.get('model', '?')}")
+        print(f"provenance: {prov.get('how', '')}")
+        print(f"CAVEAT: {prov.get('caveat', '')}")
+
+    # ---------------------------------------------------------- constrained
+    res = []
+    results_gap.clear()
+    for item in fixture["constrained"]:
+        table, err = compile_constrained(item["table"])
+        cat, why = classify(table, err, None)
+        results_gap[item["name"]] = _undetermined(table)
+        res.append((cat, item["name"], why))
+    report("CONSTRAINED: exact schema, model fills a 36-cell table", res,
+           "Reliable but close to a lookup -- the model is barely reasoning.")
+
+    # ------------------------------------------------------------- free-form
+    res = []
+    results_gap.clear()
+    for item in fixture["freeform"]:
+        table, err = compile_freeform(item["text"])
+        cat, why = classify(table, err, None)
+        results_gap[item["name"]] = _undetermined(table)
+        res.append((cat, item["name"], why))
+    report("FREE-FORM: prose, compiled by a DETERMINISTIC parser", res,
+           "The compiler is symbolic on purpose: a second LLM pass would put the\n"
+           "model back in the trust path, which the architecture forbids. So the\n"
+           "compile-failure rate measures how far free-form description is from the\n"
+           "formal representation -- which is the number we actually want.")
+
+    # ---------------------------------------------------------------- repair
+    kept = [i for i in fixture["repair"] if not i.get("excluded")]
+    dropped = [i for i in fixture["repair"] if i.get("excluded")]
+    res = []
+    results_gap.clear()
+    for item in kept:
+        hist, card = tuple(item["hist"]), item["card"]
+        table, err = compile_freeform(item["text"])
+        obs = observations_for(hist, card)
+        cat, why = classify(table, err, obs)
+        results_gap[item["name"]] = _undetermined(table)
+        res.append((cat, item["name"], why))
+    counts = report("REPAIR: propose a NEW intent to explain a contradiction", res,
+                    "The case where proposal earns its place: the observed play is\n"
+                    "explained by NO intent in the vocabulary, so the vocabulary is by\n"
+                    "definition incomplete. 'novel_valid' here means the proposal both\n"
+                    "compiles AND actually covers the behaviour that broke the model.")
+    if dropped:
+        print(f"\n  excluded ({len(dropped)}): " +
+              "; ".join(f"{i['name']} -- {i['excluded']}" for i in dropped))
+    if kept:
+        print(f"\n  COVERAGE: {counts['novel_valid']}/{len(kept)} proposed intents actually "
+              f"explain the behaviour that refuted the model.")
+
+    print("\n" + "=" * 74)
+    print("The LLM proposed. The symbolic layer decided. Nothing entered the")
+    print("hypothesis set without compiling to a total policy and surviving the")
+    print("same consistency test the built-in intents face.")
+    print("=" * 74)
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--backend", default="fixture", choices=["fixture", "api"])
+    ap.add_argument("--fixture", default="fixtures/proposals.json")
+    ap.add_argument("--model", default="claude-opus-5")
+    ap.add_argument("--n", type=int, default=8, help="proposals per strategy (api backend)")
+    args = ap.parse_args()
+
+    if args.backend == "api":
+        fx = {"provenance": {"model": args.model, "how": "live API"},
+              "constrained": [], "freeform": [], "repair": []}
+        for i in range(args.n):
+            raw = api_call(CONSTRAINED_PROMPT, args.model)
+            m = re.search(r"\{.*\}", raw, re.S)
+            try:
+                fx["constrained"].append({"name": f"c{i}", "table": json.loads(m.group(0)) if m else {}})
+            except json.JSONDecodeError as e:
+                fx["constrained"].append({"name": f"c{i}", "table": {"__unparseable__": str(e)}})
+            fx["freeform"].append({"name": f"f{i}", "text": api_call(FREEFORM_PROMPT, args.model)})
+        json.dump(fx, open("fixtures/api_run.json", "w"), indent=2)
+        print("wrote fixtures/api_run.json")
+        run(fx, args.backend, args.model, args.n)
+    else:
+        run(load_fixture(args.fixture), args.backend, args.model, args.n)
+
+
+if __name__ == "__main__":
+    main()
