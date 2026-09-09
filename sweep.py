@@ -254,8 +254,9 @@ def harden():
     print("  where H emptied (history index or showdown) -> count: " +
           ", ".join(f"{i}:{c}" for i, c in sorted(at.items())))
     chips_after = sum(r["observer_chips"] for r in early) / max(1, len(early))
-    print(f"  observer chips/hand in those {len(early)} hands (it currently just plays passive "
-          f"after the model is refuted): {chips_after:+.3f}")
+    print(f"  observer chips/hand in those {len(early)} hands, plain observer "
+          f"(plays passive after the model is refuted): {chips_after:+.3f}")
+    print(f"  -> task 4c M1 acts on exactly these hands; see `python3 sweep.py deception`")
 
     print("\n### Misattributed hands: what did the observer see?")
     mis = [r for r in pooled if r["misattributed"]]

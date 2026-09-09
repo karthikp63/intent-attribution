@@ -375,9 +375,11 @@ contradiction hands: 3403
   move, and **2466 (72.5%) emptied only at showdown** — the betting was
   consistent with some intent, and it was the revealed card that fit none.
   So the exact-elimination observer detects deception mostly after the fact.
-  Where it does see it early it currently just plays passive and loses
-  −0.61/hand in those hands; a "fold on refutation" rule is the obvious
-  cheap improvement, and it would be measurable on exactly these 397 hands.
+  Where it does see it early the plain observer just plays passive and loses
+  −0.61/hand in those hands. **Task 4c acts on exactly these 397 hands** — and
+  the "fold on refutation" rule this paragraph originally proposed turned out
+  to be wrong when measured (−6.75/hand, worse than doing nothing). See Task
+  4c, M1.
 * **What the observer sees when it is wrong.** The commonest misattributed
   histories are `bet call board:J bet fold` and `bet call board:K check
   check` — the subject bets round 1 (looking like value_bet/bluff/probe/
