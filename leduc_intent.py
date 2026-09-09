@@ -444,7 +444,7 @@ def adversarial_action(hist, subject_card, declared, condition, objective, mu=0.
 # --------------------------------------------------------------- one hand
 
 def play_hand(condition, rng, human=False, hand_no=0, subject="faithful", mu=0.0, lam=0.0,
-              deception_aware=0, state=None):
+              deception_aware=0, state=None, orng=None):
     """subject: faithful | adversarial:impersonate | adversarial:refute
 
     deception_aware (task 4c): 0 = off, and every field below is exactly what
@@ -464,6 +464,13 @@ def play_hand(condition, rng, human=False, hand_no=0, subject="faithful", mu=0.0
 
     `state` carries the refutation count across hands within one subject.
     """
+    # `orng` is the observer's OWN random stream, separate from `rng`, which
+    # deals the cards and picks the declaration. Without the split, the random
+    # condition drew its own actions from the deal stream and thereby dealt
+    # ITSELF different cards than passive/adaptive saw -- so the conditions
+    # were not paired. Defaults to rng only for direct callers that predate it.
+    if orng is None:
+        orng = rng
     adversarial = subject.startswith("adversarial")
     objective = subject.split(":")[1] if adversarial else None
     deck = DECK[:]
@@ -508,7 +515,7 @@ def play_hand(condition, rng, human=False, hand_no=0, subject="faithful", mu=0.0
             if not H and contradiction_at is None:
                 contradiction_at = len(hist)
         else:
-            a = choose_observer_action(H, hist, observer_card, condition, rng, mu,
+            a = choose_observer_action(H, hist, observer_card, condition, orng, mu,
                                        refuted_chip_play=deception_aware > 0)
             observer_moves_after += contradiction_at is not None
             if human:
@@ -635,16 +642,42 @@ def summarise(rows):
     }
 
 
-def print_table(results):
-    hdr = (f"{'condition':<30} {'exact ID':>9} {'|H| final':>10} {'sound':>7} {'misID':>6} "
-           f"{'contra':>7} {'abstain':>8} {'reveal':>7} {'deviate':>8} {'chips/hand':>11}")
+def aggregate(per_seed):
+    """mean, min, max of each metric across seeds."""
+    return {k: (sum(p[k] for p in per_seed) / len(per_seed),
+                min(p[k] for p in per_seed), max(p[k] for p in per_seed))
+            for k in per_seed[0]}
+
+
+def _cell(v, kind, multi):
+    m, lo, hi = v
+    f = (lambda x: f"{x:.1%}") if kind == "pct" else \
+        (lambda x: f"{x:.2f}") if kind == "num" else (lambda x: f"{x:+.3f}")
+    return f"{f(m)} [{f(lo)},{f(hi)}]" if multi else f(m)
+
+
+COLS = [("exact ID", "exact_id_rate", "pct"), ("|H| final", "mean_final_set", "num"),
+        ("sound", "soundness", "pct"), ("misID", "misattribution", "pct"),
+        ("contra", "contradiction", "pct"), ("abstain", "abstain", "pct"),
+        ("reveal", "reveal_rate", "pct"), ("deviate", "deviation_rate", "pct"),
+        ("chips/hand", "mean_chips", "chips")]
+
+
+def print_table(results, seeds, hands):
+    multi = len(seeds) > 1
+    w = 24 if multi else 11
+    hdr = f"{'condition':<30} {'n':>7} " + " ".join(f"{t:>{w}}" for t, _, _ in COLS)
     print("\n" + hdr)
     print("-" * len(hdr))
     for cond, s in results.items():
-        print(f"{cond:<30} {s['exact_id_rate']:>8.1%} {s['mean_final_set']:>10.2f} "
-              f"{s['soundness']:>6.0%} {s['misattribution']:>6.1%} {s['contradiction']:>7.1%} "
-              f"{s['abstain']:>8.1%} {s['reveal_rate']:>7.0%} {s['deviation_rate']:>8.1%} {s['mean_chips']:>+11.3f}")
+        print(f"{cond:<30} {hands * len(seeds):>7} " +
+              " ".join(f"{_cell(s[k], kind, multi):>{w}}" for _, k, kind in COLS))
     print()
+    print(f"n          = hands per cell ({hands} x {len(seeds)} seed(s): {', '.join(map(str, seeds))})"
+          + ("; cells show mean [min, max] across seeds" if multi else ""))
+    print("Conditions are compared on IDENTICAL deals: every condition replays the same")
+    print("shuffles and declarations from a re-seeded stream, and the observer draws its")
+    print("own randomness from a separate one. Comparisons are PAIRED, not independent.")
     print(f"intents: {len(INTENTS)}; hypotheses: {len(INTENTS)} x 5 card instances = {5 * len(INTENTS)}")
     print("exact ID   = observer named exactly the declared intent")
     print("|H| final  = mean number of intents still standing at hand's end (lower is better)")
@@ -684,6 +717,9 @@ def main():
                          "single intent; and play for chips once refuted mid-hand. "
                          "0 = off (default)")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--seeds", type=int, nargs="+", metavar="S",
+                    help="run several seeds and report mean [min, max] per metric "
+                         "(overrides --seed)")
     ap.add_argument("--human", action="store_true", help="play as the subject")
     ap.add_argument("--log", metavar="PATH", help="write per-hand JSON records")
     args = ap.parse_args()
@@ -697,26 +733,37 @@ def main():
     if args.subject in ("adversarial", "both"):
         subjects += ["adversarial:" + o for o in advs]
 
+    seeds = args.seeds if args.seeds else [args.seed]
+    if args.human and len(seeds) > 1:
+        sys.exit("--seeds is for batch runs; use --seed with --human")
+
     all_rows, results = [], {}
     for subj in subjects:
         for cond in conditions:
-            rng = random.Random(args.seed)
-            state = {"refutations": 0}          # carried across this subject's hands
-            rows = [play_hand(cond, rng, human=args.human, hand_no=k + 1, subject=subj,
-                              mu=args.mu, lam=args.lam,
-                              deception_aware=args.deception_aware, state=state)
-                    for k in range(args.hands)]
-            if args.human:
-                for r in rows:
-                    print(f"\n  observer's surviving intents: {', '.join(r['final_set']) or '(none)'}")
-                    if r["reported"] == "contradicted":
-                        print("  observer reports: CONTRADICTED -- no intent explains this"
-                              + ("  (subject already refuted the model)" if r["abstained"] else ""))
-                    print(f"  you declared: {r['declared']}   ->  "
-                          f"{'PINNED' if r['exact'] else ('in set' if r['sound'] else 'ELIMINATED')}")
-            all_rows += rows
-            results[f"{cond}/{subj}"] = summarise(rows)
-    print_table(results)
+            per_seed = []
+            for s in seeds:
+                # Deals and declarations from `rng`; the observer's own
+                # randomness from `orng`. Re-seeded per condition, so every
+                # condition sees exactly the same deals -- paired comparison.
+                rng = random.Random(s)
+                orng = random.Random(s + 1_000_000)
+                state = {"refutations": 0}      # carried across this subject's hands
+                rows = [play_hand(cond, rng, human=args.human, hand_no=k + 1, subject=subj,
+                                  mu=args.mu, lam=args.lam,
+                                  deception_aware=args.deception_aware, state=state, orng=orng)
+                        for k in range(args.hands)]
+                if args.human:
+                    for r in rows:
+                        print(f"\n  observer's surviving intents: {', '.join(r['final_set']) or '(none)'}")
+                        if r["reported"] == "contradicted":
+                            print("  observer reports: CONTRADICTED -- no intent explains this"
+                                  + ("  (subject already refuted the model)" if r["abstained"] else ""))
+                        print(f"  you declared: {r['declared']}   ->  "
+                              f"{'PINNED' if r['exact'] else ('in set' if r['sound'] else 'ELIMINATED')}")
+                all_rows += rows
+                per_seed.append(summarise(rows))
+            results[f"{cond}/{subj}"] = aggregate(per_seed)
+    print_table(results, seeds, args.hands)
 
     if args.log:
         with open(args.log, "w") as f:

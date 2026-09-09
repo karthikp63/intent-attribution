@@ -348,8 +348,15 @@ def adversarial_action(hist, subject_card, declared, condition, observer, mu, la
 # --------------------------------------------------------------- one hand
 
 def play_hand(condition, rng, human=False, hand_no=0, subject="faithful",
-              observer="greedy", mu=0.0, lam=0.0):
+              observer="greedy", mu=0.0, lam=0.0, orng=None):
     adversarial = subject == "adversarial"
+    # `orng` is the observer's OWN random stream, separate from `rng`, which
+    # deals the cards and picks the declaration. Without the split, the random
+    # condition drew its own actions from the deal stream and thereby dealt
+    # ITSELF different cards than passive/adaptive saw -- so the conditions
+    # were not paired. Defaults to rng only for direct callers that predate it.
+    if orng is None:
+        orng = rng
     deck = CARDS[:]
     rng.shuffle(deck)
     subject_card, observer_card = deck[0], deck[1]
@@ -381,7 +388,7 @@ def play_hand(condition, rng, human=False, hand_no=0, subject="faithful",
     trace.append({"who": "subject", "action": opening, "surviving": intent_set(H)})
 
     if opening == "bet":
-        obs_act = choose_observer_action(H, ["fold", "call"], condition, rng,
+        obs_act = choose_observer_action(H, ["fold", "call"], condition, orng,
                                          ("bet",), observer_card, observer, mu)
         trace.append({"who": "observer", "action": obs_act, "surviving": intent_set(H)})
         if obs_act == "fold":
@@ -391,7 +398,7 @@ def play_hand(condition, rng, human=False, hand_no=0, subject="faithful",
             H = filter_card(H, subject_card)
             observer_chips = 2 if RANK[observer_card] > RANK[subject_card] else -2
     else:
-        obs_act = choose_observer_action(H, ["check", "bet"], condition, rng,
+        obs_act = choose_observer_action(H, ["check", "bet"], condition, orng,
                                          ("check",), observer_card, observer, mu)
         trace.append({"who": "observer", "action": obs_act, "surviving": intent_set(H)})
         if obs_act == "check":
@@ -503,16 +510,42 @@ def summarise(rows):
     }
 
 
-def print_table(results):
-    hdr = (f"{'condition':<22} {'exact ID':>9} {'|H| final':>10} {'sound':>7} {'misID':>6} "
-           f"{'reveal':>7} {'deviate':>8} {'chips/hand':>11}")
+def aggregate(per_seed):
+    """mean, min, max of each metric across seeds."""
+    return {k: (sum(p[k] for p in per_seed) / len(per_seed),
+                min(p[k] for p in per_seed), max(p[k] for p in per_seed))
+            for k in per_seed[0]}
+
+
+def _cell(v, kind, multi):
+    m, lo, hi = v
+    f = (lambda x: f"{x:.1%}") if kind == "pct" else \
+        (lambda x: f"{x:.2f}") if kind == "num" else (lambda x: f"{x:+.3f}")
+    return f"{f(m)} [{f(lo)},{f(hi)}]" if multi else f(m)
+
+
+def print_table(results, seeds, hands):
+    multi = len(seeds) > 1
+    w = 24 if multi else 11
+    hdr = (f"{'condition':<22} {'n':>7} {'exact ID':>{w}} {'|H| final':>{w}} {'sound':>{w}} "
+           f"{'misID':>{w}} {'reveal':>{w}} {'deviate':>{w}} {'chips/hand':>{w}}")
     print("\n" + hdr)
     print("-" * len(hdr))
     for cond, s in results.items():
-        print(f"{cond:<22} {s['exact_id_rate']:>8.1%} {s['mean_final_set']:>10.2f} "
-              f"{s['soundness']:>6.0%} {s['misattribution']:>6.1%} {s['reveal_rate']:>7.0%} "
-              f"{s['deviation_rate']:>8.1%} {s['mean_chips']:>+11.3f}")
+        print(f"{cond:<22} {hands * len(seeds):>7} "
+              f"{_cell(s['exact_id_rate'], 'pct', multi):>{w}} "
+              f"{_cell(s['mean_final_set'], 'num', multi):>{w}} "
+              f"{_cell(s['soundness'], 'pct', multi):>{w}} "
+              f"{_cell(s['misattribution'], 'pct', multi):>{w}} "
+              f"{_cell(s['reveal_rate'], 'pct', multi):>{w}} "
+              f"{_cell(s['deviation_rate'], 'pct', multi):>{w}} "
+              f"{_cell(s['mean_chips'], 'chips', multi):>{w}}")
     print()
+    print(f"n          = hands per cell ({hands} x {len(seeds)} seed(s): {', '.join(map(str, seeds))})"
+          + ("; cells show mean [min, max] across seeds" if multi else ""))
+    print("Conditions are compared on IDENTICAL deals: every condition replays the same")
+    print("shuffles and declarations from a re-seeded stream, and the observer draws its")
+    print("own randomness from a separate one. Comparisons are PAIRED, not independent.")
     print("exact ID   = hypothesis set collapsed to exactly the declared intent")
     print("|H| final  = mean number of intents still standing at hand's end (lower is better)")
     print("sound      = declared intent never wrongly eliminated (100% by construction for a faithful subject)")
@@ -531,6 +564,9 @@ def main():
     ap.add_argument("--condition", default="all",
                     choices=["adaptive", "passive", "random", "all"])
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--seeds", type=int, nargs="+", metavar="S",
+                    help="run several seeds and report mean [min, max] per metric "
+                         "(overrides --seed)")
     ap.add_argument("--subject", default="faithful",
                     choices=["faithful", "adversarial", "both"],
                     help="faithful: plays the declared policy; adversarial: declares "
@@ -551,21 +587,32 @@ def main():
 
     subjects = ["faithful", "adversarial"] if args.subject == "both" else [args.subject]
 
+    seeds = args.seeds if args.seeds else [args.seed]
+    if args.human and len(seeds) > 1:
+        sys.exit("--seeds is for batch runs; use --seed with --human")
+
     all_rows, results = [], {}
     for subj in subjects:
         for cond in conditions:
-            rng = random.Random(args.seed)      # same deals across conditions
-            rows = [play_hand(cond, rng, human=args.human, hand_no=k + 1, subject=subj,
-                              observer=args.observer, mu=args.mu, lam=args.lam)
-                    for k in range(args.hands)]
-            if args.human:
-                for r in rows:
-                    print(f"\n  observer's surviving intents: {', '.join(r['final_set'])}")
-                    print(f"  you declared: {r['declared']}   ->  "
-                          f"{'PINNED' if r['exact'] else ('in set' if r['sound'] else 'ELIMINATED')}")
-            all_rows += rows
-            results[f"{cond}/{subj}"] = summarise(rows)
-    print_table(results)
+            per_seed = []
+            for s in seeds:
+                # Deals and declarations come from `rng`; the observer's own
+                # randomness from `orng`. Re-seeded per condition, so every
+                # condition sees exactly the same deals -- paired comparison.
+                rng = random.Random(s)
+                orng = random.Random(s + 1_000_000)
+                rows = [play_hand(cond, rng, human=args.human, hand_no=k + 1, subject=subj,
+                                  observer=args.observer, mu=args.mu, lam=args.lam, orng=orng)
+                        for k in range(args.hands)]
+                if args.human:
+                    for r in rows:
+                        print(f"\n  observer's surviving intents: {', '.join(r['final_set'])}")
+                        print(f"  you declared: {r['declared']}   ->  "
+                              f"{'PINNED' if r['exact'] else ('in set' if r['sound'] else 'ELIMINATED')}")
+                all_rows += rows
+                per_seed.append(summarise(rows))
+            results[f"{cond}/{subj}"] = aggregate(per_seed)
+    print_table(results, seeds, args.hands)
 
     if args.log:
         with open(args.log, "w") as f:

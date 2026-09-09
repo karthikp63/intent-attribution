@@ -27,10 +27,12 @@ GAMES = {"kuhn": K, "leduc": L}
 
 
 def run(game, condition, subject, seed, mu=0.0, lam=0.0):
-    rng = random.Random(seed)
+    rng = random.Random(seed)                   # deals + declarations
+    orng = random.Random(seed + 1_000_000)      # observer's own randomness
     kw = {"observer": "lookahead"} if game == "kuhn" else {}
     mod = GAMES[game]
-    return [mod.play_hand(condition, rng, hand_no=k + 1, subject=subject, mu=mu, lam=lam, **kw)
+    return [mod.play_hand(condition, rng, hand_no=k + 1, subject=subject, mu=mu, lam=lam,
+                          orng=orng, **kw)
             for k in range(HANDS)]
 
 
@@ -64,7 +66,9 @@ def fmt(v, pct=True, signed=False):
 
 def table(title, rows):
     cols = ["exact", "H", "sound", "misID", "contra", "deviate", "chips"]
-    print(f"\n### {title}\n")
+    n = HANDS * len(SEEDS)
+    print(f"\n### {title}   (n = {n} per row: {HANDS} hands x {len(SEEDS)} seeds "
+          f"{tuple(SEEDS)}; cells are mean [min, max])\n")
     print(f"{'setting':<14}" + "".join(f"{c:>22}" for c in cols))
     print("-" * (14 + 22 * len(cols)))
     for label, s in rows:
@@ -150,12 +154,12 @@ def verify():
     for subject in ["faithful", "adversarial"]:
         for cond in ["passive", "random", "adaptive"]:
             for seed in SEEDS:
-                g = [K.play_hand(cond, random.Random(seed), hand_no=k + 1,
-                                 subject=subject, observer="greedy")
-                     for k in range(HANDS)]
-                l = [K.play_hand(cond, random.Random(seed), hand_no=k + 1,
-                                 subject=subject, observer="lookahead")
-                     for k in range(HANDS)]
+                rg, og = random.Random(seed), random.Random(seed + 1_000_000)
+                g = [K.play_hand(cond, rg, hand_no=k + 1, subject=subject,
+                                 observer="greedy", orng=og) for k in range(HANDS)]
+                rl, ol = random.Random(seed), random.Random(seed + 1_000_000)
+                l = [K.play_hand(cond, rl, hand_no=k + 1, subject=subject,
+                                 observer="lookahead", orng=ol) for k in range(HANDS)]
 
                 diffs = 0
                 for a, b in zip(g, l):
@@ -300,10 +304,11 @@ def harden():
 def _run_state(game, condition, subject, seed, mu=0.0, lam=0.0, deception_aware=0):
     """Like run(), but threads refutation state across the hands of a subject."""
     rng = random.Random(seed)
+    orng = random.Random(seed + 1_000_000)
     mod = GAMES[game]
     state = {"refutations": 0}
     return [mod.play_hand(condition, rng, hand_no=k + 1, subject=subject, mu=mu, lam=lam,
-                          deception_aware=deception_aware, state=state)
+                          deception_aware=deception_aware, state=state, orng=orng)
             for k in range(HANDS)]
 
 

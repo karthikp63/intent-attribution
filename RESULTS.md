@@ -1,6 +1,29 @@
 # Results
 
-All runs: 2000 hands per cell, seed 1, same deals across conditions.
+**n and seeds.** Every cell below is **n = 6000 hands** (2000 hands x seeds
+1, 2, 3) unless the table says otherwise, and every cell shows the seed mean
+with `[min, max]` across the three seeds. Seed stability is no longer a manual
+step: `--seeds 1 2 3` on either game does this directly, and the sweeps use the
+same three seeds.
+
+**Conditions are compared on IDENTICAL deals — comparisons are PAIRED.** The
+deal stream is re-seeded per condition, so `passive`, `random` and `adaptive`
+each replay exactly the same shuffles and the same declarations. Differences
+between conditions are therefore within-deal differences, not two independent
+samples, and the `[min, max]` ranges understate the precision of a
+between-condition comparison.
+
+> **Correction (task 5).** This pairing claim used to be *false for the
+> `random` condition*. The random observer drew its own actions from the same
+> stream that dealt the cards, so it consumed draws the other conditions did
+> not and dealt itself different hands: only **5 of 200** deals matched
+> `passive`. The observer now has a separate random stream and all three
+> conditions match on 200/200. **Every `random` row below therefore changed;
+> no `passive` or `adaptive` row did**, and every sweep in Tasks 2-4 is
+> untouched (they never used the `random` condition). The faithful
+> `passive`/`adaptive` numbers reproduce the previously committed values
+> exactly.
+
 Subjects: **faithful** plays its declared policy; **adversarial** declares
 honestly (ground truth unchanged), then picks each action to maximise the
 observer's expected final intent-set size. The adversary knows the observer's
@@ -9,18 +32,21 @@ Ties break toward the declared policy, so it deviates only when it gains.
 
 ## Kuhn (`kuhn_intent.py`, 5 intents, 10 hypotheses)
 
+`python3 kuhn_intent.py --hands 2000 --condition all --subject both --seeds 1 2 3
+--observer lookahead`  (n = 6000 per row)
+
 ```
-condition               exact ID  |H| final   sound  misID  reveal  deviate  chips/hand
-passive/faithful           6.7%       2.84   100%   0.0%    100%     0.0%      -0.004
-random/faithful            9.8%       2.58   100%   0.0%     63%     0.0%      +0.054
-adaptive/faithful         21.1%       2.04   100%   0.0%     61%     0.0%      +0.409
-passive/adversarial        0.0%       3.32    65%   0.0%    100%    34.5%      -0.009
-random/adversarial         0.0%       3.00    61%   0.0%     51%    38.0%      +0.486
-adaptive/adversarial       0.0%       2.66    52%   0.0%      0%    44.4%      +1.000
+condition                    exact ID           |H| final              sound   misID           reveal          deviate   chips/hand
+passive/faithful       6.8% [6.6%,7.0%]   2.85 [2.84,2.86]              100%    0.0%             100%             0.0%   +0.001 [-0.011,+0.018]
+random/faithful      10.6% [10.2%,10.9%]  2.55 [2.54,2.57]              100%    0.0%   63.4% [62.5,63.9]          0.0%   +0.032 [+0.011,+0.049]
+adaptive/faithful    20.8% [19.9%,21.6%]  2.06 [2.04,2.08]              100%    0.0%   59.8% [58.3,61.1]          0.0%   +0.411 [+0.375,+0.449]
+passive/adversarial            0.0%       3.32 [3.31,3.33]  66.3% [65.5,67.2]   0.0%             100%   33.7% [32.8,34.5]  +0.007 [-0.009,+0.021]
+random/adversarial             0.0%       3.00 [2.99,3.02]  59.9% [58.9,61.2]   0.0%   50.5% [50.3,50.7]  40.3% [39.7,41.2]  +0.489 [+0.471,+0.506]
+adaptive/adversarial           0.0%       2.67 [2.66,2.68]  53.5% [52.0,54.5]   0.0%             0.0%    43.5% [42.6,44.4]  +1.000 [+1.000,+1.000]
 ```
 
-Degradation under adversarial play: exact ID 21.1% → 0%, |H| final 2.04 → 2.66,
-soundness 100% → 52%. Adaptive still ends with the smallest set. The adversary's
+Degradation under adversarial play: exact ID 20.8% → 0%, |H| final 2.06 → 2.67,
+soundness 100% → 53.5%. Adaptive still ends with the smallest set. The adversary's
 best reply to the adaptive observer is check-then-fold every hand (reveal 0%):
 the largest reachable set in Kuhn is the check-fold bucket {bluff, give_up,
 value_bet}. It pays 1 chip/hand for that concealment — the adversary has no chip
@@ -72,38 +98,40 @@ python3 sweep.py verify
 
 ## Leduc (`leduc_intent.py`, 7 intents, 35 hypotheses, two betting rounds)
 
-```
-condition                       exact ID  |H| final   sound  misID  contra  reveal  deviate  chips/hand
-passive/faithful                  27.4%       3.23   100%   0.0%    0.0%    100%     0.0%      -0.207
-random/faithful                   20.3%       3.33   100%   0.0%    0.0%     44%     0.0%      -0.158
-adaptive/faithful                 38.4%       2.66   100%   0.0%    0.0%     49%     0.0%      -0.490
-passive/adversarial:impersonate     0.0%       4.22    62%   0.0%    0.0%    100%    23.7%      -0.036
-random/adversarial:impersonate     0.0%       4.74    69%   0.0%    0.0%     26%    34.1%      +0.752
-adaptive/adversarial:impersonate     0.0%       4.65    67%   0.0%    0.0%     19%    36.4%      +0.901
-passive/adversarial:refute         0.0%       1.88    27%   0.0%   48.0%    100%    56.0%      -0.216
-random/adversarial:refute          1.2%       1.86    27%   6.0%   51.2%     61%    39.8%      +0.525
-adaptive/adversarial:refute        1.5%       1.60    23%   6.7%   57.5%     64%    52.7%      +0.279
-```
+`python3 leduc_intent.py --hands 2000 --condition all --subject both --seeds 1 2 3`
+(n = 6000 per row)
 
-Seeds 1–3, adaptive/faithful: 37.8–39.4% exact ID, |H| 2.62–2.66.
+```
+condition                              exact ID           |H| final              sound              misID             contra            deviate   chips/hand
+passive/faithful                 28.0% [27.4,28.7]  3.16 [3.12,3.23]              100%               0.0%               0.0%               0.0%   -0.121 [-0.207,-0.072]
+random/faithful                  20.4% [19.9,20.9]  3.29 [3.27,3.33]              100%               0.0%               0.0%               0.0%   -0.243 [-0.270,-0.225]
+adaptive/faithful                38.5% [37.8,39.4]  2.65 [2.62,2.66]              100%               0.0%               0.0%               0.0%   -0.509 [-0.539,-0.490]
+passive/adversarial:impersonate            0.0%     4.19 [4.17,4.22]  60.5% [59.8,61.8]              0.0%               0.0%  24.3% [23.7,24.6]   -0.016 [-0.036,-0.004]
+random/adversarial:impersonate             0.0%     4.72 [4.71,4.74]  67.4% [66.3,68.6]              0.0%               0.0%  35.6% [35.0,36.0]   +0.740 [+0.736,+0.744]
+adaptive/adversarial:impersonate           0.0%     4.64 [4.63,4.65]  65.7% [64.3,67.0]              0.0%               0.0%  36.6% [36.4,36.8]   +0.903 [+0.901,+0.907]
+passive/adversarial:refute                 0.0%     1.96 [1.88,2.00]  28.3% [27.1,29.3]              0.0%  46.2% [45.0,48.0]  54.0% [52.8,56.0]   -0.182 [-0.216,-0.147]
+random/adversarial:refute          1.2% [1.1,1.4]   1.85 [1.78,1.91]  27.0% [26.2,27.9]     5.4% [5.2,5.9]  51.9% [51.0,53.1]  38.8% [38.6,39.2]   +0.488 [+0.471,+0.501]
+adaptive/adversarial:refute        1.5% [1.2,1.8]   1.64 [1.60,1.66]  23.3% [23.0,23.9]     6.4% [6.0,6.7]  56.7% [56.3,57.5]  51.9% [51.5,52.7]   +0.433 [+0.279,+0.515]
+```
 
 * **Not a Kuhn artifact.** Adaptive beats passive and random on both exact ID
-  (38.4% vs 27.4% / 20.3%) and |H| final (2.66 vs 3.23 / 3.33). The observer's
+  (38.5% vs 28.0% / 20.4%) and |H| final (2.65 vs 3.16 / 3.29), on identical
+  deals in all three conditions. The observer's
   rule here is exact lookahead over the rest of the hand (in Kuhn that collapses
   to the one-step greedy rule).
 * **The information trade now costs chips.** In Kuhn adaptive made money; in
-  Leduc it loses 0.49/hand because probing is a 4-chip bet in round 2. Both are
+  Leduc it loses 0.51/hand because probing is a 4-chip bet in round 2. Both are
   real; the selection rule ignores payoff by design, and this is what a
   cost-aware rule would need to fix.
 * **Two adversaries.** `impersonate` must stay consistent with some intent
   (empty set scores 0 for it); `refute` may play like nobody (empty set scores
   as full concealment). They are qualitatively different opponents:
-  impersonate drives |H| up (4.65) with 0% exact ID; refute drives the observer
+  impersonate drives |H| up (4.64) with 0% exact ID; refute drives the observer
   into contradiction 50–58% of the time and produces misattribution (6.7% of
   hands end on exactly one intent, the wrong one — worse than ambiguity).
   Which adversary matters is a question for the group; both are reported.
 * **Soundness is now a measurement.** 100% by construction for faithful play;
-  52–69% for impersonate, 21–27% for refute. This is the number a human pilot
+  60–68% for impersonate, 23–28% for refute. This is the number a human pilot
   will fill in for real subjects.
 
 Representative Leduc trace (declared bluff, subject K1, observer J0):
@@ -497,7 +525,10 @@ python3 leduc_intent.py --hands 2000 --condition all --subject both --seed 1
 python3 leduc_intent.py --human --hands 10 --subject adversarial --adversary impersonate --log pilot.json
 python3 kuhn_intent.py  --hands 2000 --condition adaptive --subject adversarial --lam 0.25 --observer lookahead
 python3 leduc_intent.py --hands 2000 --condition adaptive --mu 0.1
-python3 sweep.py all          # ~1 min; every table above, seeds 1-3
+python3 sweep.py verify       # gate: Kuhn greedy == lookahead, 36k hands per rule
+python3 sweep.py deception    # task 4c: deception-aware observer
+python3 sweep.py all          # gate + every table above, seeds 1-3
+python3 leduc_intent.py --hands 2000 --condition all --subject both --seeds 1 2 3
 ```
 
 Per-hand JSON records carry a `subject` tag (`faithful`, `adversarial:impersonate`,

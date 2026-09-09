@@ -12,7 +12,7 @@ No LLM. No learned distance metric. Exact set elimination over a finite space.
 ## Quick start
 
 ```bash
-python3 kuhn_intent.py  --hands 2000 --condition all --seed 1               # Kuhn, faithful subject
+python3 kuhn_intent.py  --hands 2000 --condition all --seeds 1 2 3          # Kuhn, faithful subject
 python3 kuhn_intent.py  --hands 2000 --condition all --seed 1 --subject both  # + adversarial subject
 python3 leduc_intent.py --hands 2000 --condition all --seed 1 --subject both  # Leduc hold'em
 python3 sweep.py verify                                                       # gate: Kuhn greedy == lookahead
@@ -23,16 +23,19 @@ python3 sweep.py all                                                          # 
 Requires Python 3.8+. No dependencies. Full numbers and interpretation in
 [RESULTS.md](RESULTS.md).
 
+Kuhn, faithful subject, n = 6000 (2000 hands x seeds 1-3), mean [min, max];
+all three conditions on identical deals:
+
 ```
-condition   exact ID  |H| final   sound   reveal  chips/hand
-------------------------------------------------------------
-passive        6.7%       2.84   100%    100%      -0.004
-random         9.8%       2.58   100%     63%      +0.054
-adaptive      21.1%       2.04   100%     61%      +0.409
+condition   exact ID              |H| final          sound   reveal  chips/hand
+-------------------------------------------------------------------------------
+passive      6.8% [6.6%,7.0%]     2.85 [2.84,2.86]   100%     100%     +0.001
+random      10.6% [10.2%,10.9%]   2.55 [2.54,2.57]   100%      63%     +0.032
+adaptive    20.8% [19.9%,21.6%]   2.06 [2.04,2.08]   100%      60%     +0.411
 ```
 
 Adaptive probing roughly triples exact identification and cuts the surviving
-intent set from 2.84 to 2.04. Stable across seeds (19.7–21.6%).
+intent set from 2.85 to 2.06.
 
 ## Play it yourself
 
@@ -120,6 +123,11 @@ generalisation of the Kuhn one.
 `|H| final` is the project's working proxy for **worst-case distinctiveness**,
 the metric from the goal recognition design literature (Keren, Gal & Karpas,
 ICAPS 2014).
+
+**Reporting.** `--seeds 1 2 3` runs several seeds and reports mean `[min, max]`
+per metric; every table carries its `n`. All three conditions are replayed on
+**identical deals** (the deal stream is re-seeded per condition and the observer
+draws from a separate stream), so condition comparisons are **paired**.
 
 ## Why soundness matters
 
