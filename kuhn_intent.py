@@ -21,6 +21,7 @@ import argparse
 import itertools
 import json
 import random
+from functools import lru_cache
 import sys
 from collections import Counter
 
@@ -289,7 +290,7 @@ def choose_lookahead_action(H, hist, observer_card, mu):
 # Kuhn has no in_model / out_of_model split: every (card, action-path) pair is
 # consistent with at least one intent, so the set can never empty and
 # out_of_model is unreachable. `sweep.py verify` proves this by enumeration.
-MISFIT_MODES = ["in_model"]
+MISFIT_MODES = ["in_model", "misattribute"]
 _SUBJECT_ALIASES = {"adversarial": "misfit"}
 _MODE_ALIASES = {"impersonate": "in_model", "refute": "out_of_model"}
 
@@ -366,12 +367,48 @@ def misfit_action(hist, subject_card, declared, condition, observer, mu, lam):
     return preferred if scores[preferred] == best else max(scores, key=scores.get)
 
 
+# ------------------------------------------- THE CONSISTENT MISATTRIBUTOR
+#
+# Same construction as Leduc's (see the long note there). Kuhn is the case where
+# EVERY behaviour is in-model -- `sweep.py verify` proves all 15 (card, history)
+# pairs are explained by some intent -- so "stay inside the model" costs the
+# subject nothing at all here. Whether that translates into misattribution is a
+# separate question about how pinnable Kuhn's intents are, and is measured, not
+# assumed.
+
+@lru_cache(maxsize=None)
+def pin_probability(i_star, subject_card, condition, observer="lookahead", mu=0.0):
+    """P(the observer's final intent set is exactly {i_star}) when the subject
+    plays i_star's policy with subject_card. Exact enumeration over the
+    observer's card and, for the random condition, its own randomisation."""
+    def rec(hist, observer_card):
+        who = to_act(hist)
+        if who == "terminal":
+            return 1.0 if intent_set(final_H(observer_card, hist, subject_card)) == [i_star] else 0.0
+        if who == "subject":
+            return rec(hist + (subject_policy(i_star, subject_card, hist),), observer_card)
+        dist = observer_action_dist(observer_H(observer_card, hist), hist,
+                                    observer_card, condition, observer, mu)
+        return sum(p * rec(hist + (a,), observer_card) for a, p in dist.items() if p)
+
+    obs = [o for o in CARDS if o != subject_card]
+    return sum(rec((), o) for o in obs) / len(obs)
+
+
+@lru_cache(maxsize=None)
+def misattributing_intent(subject_card, declared, condition, observer="lookahead", mu=0.0):
+    cands = [i for i in INTENTS if i != declared]
+    return max(cands, key=lambda i: (pin_probability(i, subject_card, condition, observer, mu),
+                                     -INTENTS.index(i)))
+
+
 # --------------------------------------------------------------- one hand
 
 def play_hand(condition, rng, human=False, hand_no=0, subject="faithful",
               observer="greedy", mu=0.0, lam=0.0, orng=None):
     subject = normalise_subject(subject)
-    misfit = subject == "misfit"
+    misfit = subject.startswith("misfit")
+    objective = subject.split(":")[1] if ":" in subject else None
     # `orng` is the observer's OWN random stream, separate from `rng`, which
     # deals the cards and picks the declaration. Without the split, the random
     # condition drew its own actions from the deal stream and thereby dealt
@@ -389,6 +426,9 @@ def play_hand(condition, rng, human=False, hand_no=0, subject="faithful",
     else:
         declared = rng.choice(INTENTS)
 
+    play_as = (misattributing_intent(subject_card, declared, condition, observer, mu)
+               if objective == "misattribute" else None)
+
     H = initial_hypotheses(observer_card)
     trace = []
     observer_chips = 0
@@ -400,6 +440,8 @@ def play_hand(condition, rng, human=False, hand_no=0, subject="faithful",
     faithful_open = opening_action(declared, subject_card)
     if human:
         opening = prompt_action("Your move", ["check", "bet"], suggested=faithful_open)
+    elif objective == "misattribute":
+        opening = subject_policy(play_as, subject_card, ())
     elif misfit:
         opening = misfit_action((), subject_card, declared, condition, observer, mu, lam)
     else:
@@ -432,6 +474,8 @@ def play_hand(condition, rng, human=False, hand_no=0, subject="faithful",
             if human:
                 resp = prompt_action("Observer bets. Your move", ["fold", "call"],
                                      suggested=faithful_resp)
+            elif objective == "misattribute":
+                resp = subject_policy(play_as, subject_card, ("check", "bet"))
             elif misfit:
                 resp = misfit_action(("check", "bet"), subject_card, declared,
                                      condition, observer, mu, lam)
@@ -453,6 +497,7 @@ def play_hand(condition, rng, human=False, hand_no=0, subject="faithful",
         "hand": hand_no,
         "condition": condition,
         "subject": subject,                  # log tag: faithful | misfit
+        "played_as": play_as,                # misattribute mode: intent actually played
         "observer": observer, "mu": mu, "lam": lam,
         "subject_card": subject_card,
         "observer_card": observer_card,
@@ -590,7 +635,7 @@ def main():
                     help="run several seeds and report mean [min, max] per metric "
                          "(overrides --seed)")
     ap.add_argument("--subject", default="faithful",
-                    choices=["faithful", "misfit", "both", "adversarial"],
+                    choices=["faithful", "misfit", "misfit:misattribute", "both", "adversarial"],
                     help="faithful: plays the declared policy; misfit: declares honestly, "
                          "then produces behaviour the intent model cannot explain "
                          "('adversarial' is a deprecated alias for misfit)")

@@ -105,6 +105,15 @@ pairs there are explained by some intent, so the model can never be left.)
 > identical to the observer.** The old names (`adversarial`, `impersonate`,
 > `refute`) still work on the command line and in logged records.
 
+**The consistent misattributor.** `--misfit-mode misattribute`. Declares one
+intent, then plays a *different* one faithfully — the most pinnable one for its
+card. It never contradicts, so the deception-aware observer never fires, and it
+drives the adaptive observer to a confident wrong single intent in **98.6%** of
+Leduc hands (79.2% in Kuhn). The set of never-contradicting behaviours is
+exactly "play some intent's policy", so this is the whole in-model attack
+surface, not one instance of it. Competence is the vulnerability: the observer
+best at pinning is the most reliably pinned onto the wrong answer.
+
 **Deception-aware observer.** `--deception-aware K` (Leduc). An empty
 hypothesis set is *proof* that the subject is faithful to no intent — the
 premise every conclusion rests on. After `K` such proofs the observer reports
@@ -203,6 +212,7 @@ checking reveals only the card.
 - [x] Leduc hold'em (larger tree, still enumerable)
 - [x] Cost-aware misfit generator and observer (λ / μ sweeps)
 - [x] Deception-aware observer — abstain once the model has been refuted
+- [x] Consistent misattributor — in-model attack that defeats the above
 - [ ] Human pilot — soundness rate for real subjects
 - [ ] LLM as *proposer only* — suggests hypotheses, symbolic layer validates;
       measure the rejection rate

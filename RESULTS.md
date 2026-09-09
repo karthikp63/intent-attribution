@@ -551,6 +551,149 @@ in_model lam=2            median 6,  mean 16.7
   singleton: its misID is already 0.0%. A subject that could misattribute
   without ever contradicting would defeat M2, and nothing here rules one out.
 
+## The consistent misattributor — M2's guarantee has a hole, and it is a large one
+
+`python3 sweep.py misattribute`. The open limitation from the deception-aware
+observer was that M2 abstains on **contradiction**, so it defends only against
+behaviour that *leaves* the intent model. This asks the obvious next question:
+can a subject stay strictly inside the model and still drive the observer to a
+confident, wrong, single intent? **Yes. Almost always.**
+
+### The constraint has an exact characterisation
+
+"Never empty the hypothesis set" sounds like a loose constraint. It is not.
+
+At showdown the observer filters its set down to the subject's revealed card,
+so the set survives only if **some intent generates the subject's entire action
+path with that card**. The set of never-contradicting behaviours is therefore
+exactly
+
+> { play intent *i*'s policy faithfully : *i* ∈ INTENTS }
+
+and nothing else. A subject cannot mix two intents across a hand unless a third
+intent happens to generate the mixture. Two consequences follow immediately:
+
+1. If the subject plays *i\**'s policy, ***i\** can never be eliminated*** — it
+   generated every action and it matches the revealed card. So *i\** is in the
+   final set always, and **any singleton final set is necessarily exactly
+   {*i\**}**. Enumerated over all 840 (card, intent, observer card, board)
+   combinations: 0 eliminations, 0 singletons that are not *i\**.
+2. So misattribution means: the observer pins *i\**, and *i\** is not what the
+   subject declared.
+
+**The entire attack is therefore: declare one intent, then play a different one
+faithfully — the most pinnable one available for your card.**
+
+### The numbers
+
+Leduc, n = 6000 per row (2000 hands x seeds 1–3), mean [min, max]. `k` is M2's
+abstention threshold.
+
+```
+condition      k(M2)   exact ID   |H| final        sound        misID      contra   chips/hand
+passive            0       0.0%   1.16          0.0%   95.5% [94.9,96.2]     0.0%       -0.157
+passive            1       0.0%   1.16          0.0%   95.5% [94.9,96.2]     0.0%       -0.157
+random             0       0.0%   2.53   22.6% [21.6,23.1]   52.1% [50.5,53.8]   0.0%   -0.680
+random             1       0.0%   2.53   22.6% [21.6,23.1]   52.1% [50.5,53.8]   0.0%   -0.680
+adaptive           0       0.0%   1.05          0.0%   98.6% [98.0,99.0]     0.0%       -0.490
+adaptive           1       0.0%   1.05          0.0%   98.6% [98.0,99.0]     0.0%       -0.490
+```
+
+Kuhn, where *every* behaviour is in-model so the constraint costs nothing:
+
+```
+passive            -       0.0%   2.22   21.4% [20.7,22.4]   25.5% [24.8,26.2]   0.0%   -0.194
+random             -       0.0%   2.04   20.5% [20.0,21.1]   38.9% [38.6,39.5]   0.0%   -0.147
+adaptive           -       0.0%   1.28          0.0%   79.2% [78.5,80.1]     0.0%       -0.060
+```
+
+The same adaptive observer, for scale:
+
+```
+faithful                  38.5%   2.65          100%          0.0%           0.0%       -0.509
+misfit:in_model            0.0%   4.64   65.7%                0.0%           0.0%       +0.903
+misfit:out_of_model        1.5%   1.64   23.3%                6.4%          56.7%       +0.433
+```
+
+### Verifications
+
+These are checks that would show the construction is broken rather than strong,
+and they are run, not assumed:
+
+```
+              n=6000  contradictions  exact ID  played intent eliminated  played==declared
+passive                            0         0                         0                 0
+random                             0         0                         0                 0
+adaptive                           0         0                         0                 0
+
+M2 on vs off, identical on every metric:  passive True   random True   adaptive True
+```
+
+Contradiction is **exactly** 0, not approximately 0 — as it must be, since that
+is what "in-model" means. Exact ID is exactly 0 structurally: the played intent
+always survives and is never the declared one, so the set can never be exactly
+{declared}. And M2 is **bit-for-bit irrelevant**: no contradiction ever fires,
+so the flag can never be raised.
+
+### What the attack does at the table
+
+Nothing clever. It plays the most *stereotyped* policy available for its card.
+
+Pin probability — P(the observer's final set is exactly {i}) if the subject
+plays *i*, adaptive observer:
+
+```
+card      value_bet    bluff    probe  give_up     trap  represent  pot_control
+J             0.200    1.000    1.000    0.000    0.200      0.600        0.000
+Q             0.000    0.000    1.000    0.000    0.800      0.400        0.000
+K             1.000    0.500    0.000    0.000    0.900      0.600        0.000
+```
+
+Every card has at least one intent the observer pins **with probability 1.000**
+— J: bluff or probe; Q: probe; K: value_bet. So whatever the subject declares,
+an alternative that gets pinned with *certainty* is nearly always available.
+Across all (card, declared) pairs the played intent is `probe` x14, `bluff` x12,
+`value_bet` x12, `trap` x4.
+
+In plain language: **the attack is to be maximally legible as the wrong thing.**
+It is the opposite of hiding. The subject bets its J like a textbook bluff, or
+its K like a textbook value bet, and the observer — which is *good* at this —
+reads the policy correctly and reports an intent the subject never declared.
+
+### Reading
+
+* **M2's scope is now precisely bounded.** It defends against `out_of_model`
+  behaviour and against nothing else. Against in-model misattribution it is not
+  weak, it is *inert*: identical on every metric to the observer without it.
+  The earlier limitation note said "a subject that could misattribute without
+  ever contradicting would defeat M2, and nothing here rules one out." One
+  exists, it is easy to build, and it wins 98.6% of hands.
+* **Competence is the vulnerability.** Ranked by misID: adaptive 98.6% >
+  passive 95.5% > random 52.1%. The observer that is *best* at collapsing the
+  hypothesis set is the one most reliably collapsed onto the wrong answer. The
+  random observer is the safest of the three, purely because it learns less.
+  The same ordering holds in Kuhn (79.2% > 25.5%, with random at 38.9%).
+* **A larger action space makes this worse, not better.** Leduc's 98.6% against
+  Kuhn's 79.2%. More room to distinguish intents means intents are more
+  distinguishable — which is exactly what makes the wrong one identifiable with
+  certainty. Every improvement to worst-case distinctiveness is also an
+  improvement to worst-case *mis*-distinctiveness.
+* **This needs no deception, and that is the point.** Read through the misfit
+  reframing, this construction is not an attacker: it is a subject **whose
+  declared label and executed policy come apart** — the "picked the nearest
+  option from a menu that did not fit" case, which is the single most likely
+  thing to happen in a human pilot. The observer is not being lied to. It is
+  being told the truth by someone whose vocabulary does not match their
+  behaviour, and it responds with confident, precise, wrong certainty.
+* **What would actually defend against it.** Nothing in the elimination
+  framework, because the observer's conclusion is *correct* about the policy
+  and wrong only about the label. Distinguishing "this person is executing
+  probe" from "this person believes they are executing value_bet" requires
+  evidence the action history does not contain. That is a limit of the
+  behavioural approach, not of this implementation — and it is the strongest
+  argument in the project for why the declaration has to be measured against
+  behaviour rather than assumed to match it.
+
 ## Commands
 
 ```

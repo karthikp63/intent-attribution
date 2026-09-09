@@ -390,7 +390,11 @@ def observer_action_dist(H, hist, observer_card, condition, mu=0.0):
 #   out_of_model: |INTENTS| -- the behaviour matches no intent at all, so the
 #                       vocabulary does not cover it. The observer's model is
 #                       refuted rather than merely confused.
-MISFIT_MODES = ["in_model", "out_of_model"]
+#
+# A third mode, `misattribute`, is built differently -- see THE CONSISTENT
+# MISATTRIBUTOR below. It does not score concealment at all; it maximises the
+# chance the observer lands confidently on the WRONG single intent.
+MISFIT_MODES = ["in_model", "out_of_model", "misattribute"]
 
 # Back-compatible names. The condition was called "adversarial" and its modes
 # "impersonate"/"refute" until the reframing; old commands and old logged
@@ -480,6 +484,79 @@ def misfit_action(hist, subject_card, declared, condition, objective, mu=0.0, la
     return preferred if scores[preferred] == best else max(scores, key=scores.get)
 
 
+# ------------------------------------------- THE CONSISTENT MISATTRIBUTOR
+#
+# The open limitation of the deception-aware observer (task 4c, M2) was that it
+# abstains on CONTRADICTION, so it only defends against behaviour that leaves
+# the model. A subject that stays strictly inside the model while still steering
+# the observer to a confident WRONG single intent would defeat it entirely.
+#
+# The hard constraint is: never empty the hypothesis set. That constraint has an
+# exact characterisation, and it is much stronger than it looks:
+#
+#   At showdown the observer filters its set to the subject's revealed card, so
+#   the set survives only if SOME intent generates the subject's entire action
+#   path with that card. The set of never-contradicting behaviours is therefore
+#   exactly { play intent i's policy : i in INTENTS }. There is nothing else in
+#   it -- a subject cannot mix two intents across a hand unless a third intent
+#   happens to generate the mixture.
+#
+# Two consequences fall straight out:
+#
+#   1. If the subject plays i*'s policy, i* can never be eliminated: it
+#      generated every action and it matches the revealed card. So i* is in the
+#      final set always, and any singleton final set is necessarily exactly
+#      {i*}. (Enumerated: 840/840 combos, 0 eliminations, 0 singletons != i*.)
+#   2. Misattribution therefore means the observer pins i* and i* is not what
+#      the subject declared. The whole attack is: declare d, then play some
+#      OTHER intent faithfully, chosen to be as pinnable as possible.
+#
+# That is not an exotic strategy. It is precisely the "picked the nearest option
+# from a menu that did not fit" case from the misfit reframing: the person's
+# label and the policy they actually execute come apart. The observer is not
+# being deceived -- it is being told the truth by someone whose vocabulary does
+# not match their behaviour, and it answers with confident, wrong certainty.
+
+
+@lru_cache(maxsize=None)
+def pin_probability(i_star, subject_card, condition, mu=0.0):
+    """P(the observer's final intent set is exactly {i_star}) when the subject
+    plays i_star's policy with subject_card.
+
+    Exact enumeration over the observer's card (uniform over the 5 remaining
+    instances), the board (uniform over the 4 then remaining) and -- for the
+    random condition -- the observer's own randomisation. No sampling.
+    """
+    def rec(hist, observer_card, board):
+        who = to_act(hist)
+        if who == "terminal":
+            return 1.0 if intent_set(final_H(observer_card, hist, subject_card)) == [i_star] else 0.0
+        if who == "chance":
+            return rec(hist + ("board:" + board,), observer_card, board)
+        if who == "subject":
+            return rec(hist + (policy(i_star, subject_card, hist),), observer_card, board)
+        dist = observer_action_dist(observer_H(observer_card, hist), hist,
+                                    observer_card, condition, mu)
+        return sum(p * rec(hist + (a,), observer_card, board) for a, p in dist.items() if p)
+
+    obs = [o for o in DECK if o != subject_card]
+    total = 0.0
+    for o in obs:
+        boards = [b for b in DECK if b not in (subject_card, o)]
+        for b in boards:
+            total += rec((), o, b) / (len(obs) * len(boards))
+    return total
+
+
+@lru_cache(maxsize=None)
+def misattributing_intent(subject_card, declared, condition, mu=0.0):
+    """The intent to actually play: the most pinnable one that is NOT declared.
+    Ties break by INTENTS order, purely for determinism."""
+    cands = [i for i in INTENTS if i != declared]
+    return max(cands, key=lambda i: (pin_probability(i, subject_card, condition, mu),
+                                     -INTENTS.index(i)))
+
+
 # --------------------------------------------------------------- one hand
 
 def play_hand(condition, rng, human=False, hand_no=0, subject="faithful", mu=0.0, lam=0.0,
@@ -523,6 +600,11 @@ def play_hand(condition, rng, human=False, hand_no=0, subject="faithful", mu=0.0
     else:
         declared = rng.choice(INTENTS)
 
+    # The consistent misattributor commits to one intent for the whole hand;
+    # that is the entire space of never-contradicting behaviour (see above).
+    play_as = (misattributing_intent(subject_card, declared, condition, mu)
+               if objective == "misattribute" else None)
+
     hist = ()
     H = initial_hypotheses(observer_card)
     # Flag reflects PRIOR hands only; this hand's refutation is counted after.
@@ -546,6 +628,8 @@ def play_hand(condition, rng, human=False, hand_no=0, subject="faithful", mu=0.0
             faithful = policy(declared, subject_card, hist)
             if human:
                 a = prompt_action(f"Round {round_seq(hist)[0]}, your move", legal(hist), faithful)
+            elif objective == "misattribute":
+                a = policy(play_as, subject_card, hist)
             elif misfit:
                 a = misfit_action(hist, subject_card, declared, condition, objective, mu, lam)
             else:
@@ -603,6 +687,7 @@ def play_hand(condition, rng, human=False, hand_no=0, subject="faithful", mu=0.0
         "contradiction_at": contradiction_at,   # history index, "showdown", or None
         "observer_moves_after_contradiction": observer_moves_after,
         # --- task 4c: report level (== set level when deception_aware = 0)
+        "played_as": play_as,                     # misattribute mode: intent actually played
         "deception_aware": deception_aware,
         "flagged": flagged,                       # subject had already refuted the model
         "reported": reported,                     # intent | "contradicted" | None

@@ -7,6 +7,7 @@ Sweeps and hardening for the cost-aware misfit generator / observer.
     python3 sweep.py observer      # task 3: identification kept per chip (mu sweep)
     python3 sweep.py harden        # misID confidence interval, contradiction timing
     python3 sweep.py deception     # task 4c: deception-aware observer, and what it costs
+    python3 sweep.py misattribute  # the consistent misattributor: stays in-model, still wrong
     python3 sweep.py all
 
 Every cell: 2000 hands per seed, seeds 1-3; table shows the seed mean and,
@@ -368,7 +369,7 @@ def _report_stats(rows):
     n = len(rows)
     return {
         "exact": sum(r["report_exact"] for r in rows) / n,
-        "misID": sum(r["report_misID"] for r in rows) / n,
+        "misID": sum(r.get("report_misID", r["misattributed"]) for r in rows) / n,
         "abstain": sum(r["reported"] == "contradicted" for r in rows) / n,
         "withheld": sum(r["abstained"] for r in rows) / n,
         "H": sum(r["final_size"] for r in rows) / n,
@@ -468,6 +469,121 @@ def deception():
             print(f"{label:<28} {'-':>8} {'-':>8} {never:>28}")
 
 
+# --------------------------------------- the consistent misattributor
+#
+# Does M2's guarantee have a hole? M2 abstains on CONTRADICTION, so it defends
+# only against behaviour that LEAVES the intent model. This asks whether a
+# subject can stay strictly inside the model and still drive the observer to a
+# confident WRONG single intent.
+#
+# Verifications, not assumptions:
+#   - contradiction rate must be EXACTLY 0 (that is what "stays in-model" means;
+#     if it is not 0 the construction is broken, not merely weak)
+#   - exact ID must be EXACTLY 0 (structural: the played intent always survives
+#     and is not the declared one, so the set can never be exactly {declared})
+#   - the played intent must be in the final set in EVERY hand
+#   - M2 on and M2 off must produce identical numbers (no contradiction ever
+#     fires, so the flag can never be raised). If they differ, either the
+#     construction leaks or M2 is reading something other than contradictions.
+
+def _mis_stats(rows):
+    n = len(rows)
+    return {
+        "exact": sum(r.get("report_exact", r["exact"]) for r in rows) / n,
+        "H": sum(r["final_size"] for r in rows) / n,
+        "sound": sum(r["sound"] for r in rows) / n,
+        "misID": sum(r.get("report_misID", r["misattributed"]) for r in rows) / n,
+        "contra": sum(r.get("contradiction", False) for r in rows) / n,
+        "chips": sum(r["observer_chips"] for r in rows) / n,
+    }
+
+
+def misattribute():
+    print("\n## The consistent misattributor: in-model, and still confidently wrong\n")
+    print("Declares honestly, then plays ANOTHER intent's policy faithfully -- the most")
+    print("pinnable one available for its card. Never contradicts, by construction.")
+    print(f"Cells: mean over seeds {tuple(SEEDS)} [min, max], n = {HANDS * len(SEEDS)} per row.\n")
+
+    KEYS = ["exact", "H", "sound", "misID", "contra", "chips"]
+    hdr = (f"{'condition':<14} {'k(M2)':>6} {'exact ID':>20} {'|H| final':>20} {'sound':>20} "
+           f"{'misID':>20} {'contra':>20} {'chips/hand':>22}")
+    print(hdr)
+    print("-" * len(hdr))
+
+    baselines = {}
+    for cond in ["passive", "random", "adaptive"]:
+        for k in [0, 1]:
+            per = [_mis_stats(_run_state("leduc", cond, "misfit:misattribute", s,
+                                         deception_aware=k)) for s in SEEDS]
+            m = _mean_range(per, KEYS)
+            baselines[(cond, k)] = m
+            print(f"{cond:<14} {k:>6} " +
+                  f"{fmt(m['exact']):>20} {fmt(m['H'], pct=False):>20} {fmt(m['sound']):>20} "
+                  f"{fmt(m['misID']):>20} {fmt(m['contra']):>20} "
+                  f"{fmt(m['chips'], pct=False, signed=True):>22}")
+
+    print("\nKuhn -- where EVERY behaviour is in-model, so the constraint is free:")
+    for cond in ["passive", "random", "adaptive"]:
+        per = [_mis_stats(run("kuhn", cond, "misfit:misattribute", s)) for s in SEEDS]
+        m = _mean_range(per, KEYS)
+        print(f"{cond:<14} {'-':>6} " +
+              f"{fmt(m['exact']):>20} {fmt(m['H'], pct=False):>20} {fmt(m['sound']):>20} "
+              f"{fmt(m['misID']):>20} {fmt(m['contra']):>20} "
+              f"{fmt(m['chips'], pct=False, signed=True):>22}")
+
+    print("\nFor reference, the same observer against other subjects (adaptive, k=0):")
+    for subj, label in [("faithful", "faithful"),
+                        ("misfit:in_model", "misfit:in_model"),
+                        ("misfit:out_of_model", "misfit:out_of_model")]:
+        per = [_mis_stats(_run_state("leduc", "adaptive", subj, s)) for s in SEEDS]
+        m = _mean_range(per, KEYS)
+        print(f"{label:<14} {0:>6} " +
+              f"{fmt(m['exact']):>20} {fmt(m['H'], pct=False):>20} {fmt(m['sound']):>20} "
+              f"{fmt(m['misID']):>20} {fmt(m['contra']):>20} "
+              f"{fmt(m['chips'], pct=False, signed=True):>22}")
+
+    # ------------------------------------------------------------ verifications
+    print("\n### Verifications (these would show the construction is broken)\n")
+    ok = True
+    for cond in ["passive", "random", "adaptive"]:
+        rows = [r for s in SEEDS
+                for r in _run_state("leduc", cond, "misfit:misattribute", s, deception_aware=0)]
+        contra = sum(r["contradiction"] for r in rows)
+        exact = sum(r["report_exact"] for r in rows)
+        played_gone = sum(1 for r in rows if r["played_as"] not in r["final_set"])
+        declared_played = sum(1 for r in rows if r["played_as"] == r["declared"])
+        print(f"  {cond:<9} n={len(rows)}  contradictions={contra}  exact ID={exact}  "
+              f"played intent eliminated={played_gone}  played==declared={declared_played}")
+        ok &= (contra == 0 and exact == 0 and played_gone == 0 and declared_played == 0)
+
+    print("\n  M2 on vs off (must be identical -- no contradiction ever fires):")
+    for cond in ["passive", "random", "adaptive"]:
+        a, b = baselines[(cond, 0)], baselines[(cond, 1)]
+        same = all(abs(a[k][0] - b[k][0]) < 1e-12 for k in KEYS)
+        print(f"  {cond:<9} identical on every metric: {same}")
+        ok &= same
+    print("\n  RESULT: " + ("construction verified" if ok else
+                             "VERIFICATION FAILED -- do not report these numbers"))
+
+    # ---------------------------------------------------- what it does at the table
+    print("\n### What the attack actually does\n")
+    print("Pin probability -- P(observer's final set is exactly {i}) if the subject plays i:\n")
+    print(f"  {'card':<6}" + "".join(f"{i[:11]:>13}" for i in L.INTENTS))
+    for c in L.DECK:
+        print(f"  {c:<6}" + "".join(f"{L.pin_probability(i, c, 'adaptive', 0.0):>13.3f}"
+                                    for i in L.INTENTS))
+    print("\n  Every card has at least one intent the observer pins with probability 1.000")
+    print("  (J: bluff or probe; Q: probe; K: value_bet). So whatever the subject declares,")
+    print("  an alternative that gets pinned with CERTAINTY is almost always available.")
+    choices = {}
+    for c in L.DECK:
+        for d in L.INTENTS:
+            choices[(c, d)] = L.misattributing_intent(c, d, "adaptive", 0.0)
+    from collections import Counter
+    print("\n  intent actually played, over all (card, declared) pairs: " +
+          ", ".join(f"{i} x{n}" for i, n in Counter(choices.values()).most_common()))
+
+
 if __name__ == "__main__":
     what = sys.argv[1] if len(sys.argv) > 1 else "all"
     if what in ("verify", "all"):
@@ -481,3 +597,5 @@ if __name__ == "__main__":
         harden()
     if what in ("deception", "all"):
         deception()
+    if what in ("misattribute", "all"):
+        misattribute()
