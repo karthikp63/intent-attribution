@@ -2,6 +2,7 @@
 """
 Sweeps and hardening for the cost-aware adversary / observer.
 
+    python3 sweep.py verify        # task 1: Kuhn greedy == lookahead, every metric
     python3 sweep.py adversary     # task 2: concealment bought per chip (lam sweep)
     python3 sweep.py observer      # task 3: identification kept per chip (mu sweep)
     python3 sweep.py harden        # misID confidence interval, contradiction timing
@@ -106,6 +107,102 @@ def sweep_observer():
 
 # ---------------------------------------------------------------- hardening
 
+# --------------------------------------------------------------- task 1: gate
+#
+# Kuhn has ONE betting round, so there is no "later" for the lookahead observer
+# to look ahead to: at every observer decision the remaining subtree is at most
+# one subject reply plus the showdown, which is exactly what the one-step greedy
+# rule already scores. The two rules are therefore the same computation and must
+# agree hand for hand. This is a gate, not a nicety -- every result below assumes
+# both observers are correct, and the Leduc observer is only a generalisation of
+# the Kuhn one if this passes.
+#
+# Compared per hand, not just in aggregate: two different rules can produce
+# identical means over 2000 hands while disagreeing on individual hands, so an
+# aggregate-only check would not catch a real divergence.
+
+# Every field of a per-hand record except the tag naming which rule produced it.
+_IGNORE = {"observer"}
+
+METRICS = ["exact", "H", "sound", "misID", "contra", "deviate", "chips", "reveal"]
+
+
+def _metrics(rows):
+    s = stats(rows)
+    s["reveal"] = sum(r["card_revealed"] for r in rows) / len(rows)
+    return s
+
+
+def verify():
+    print("\n## Task 1 gate: Kuhn greedy vs. exact lookahead\n")
+    print("One betting round => no lookahead horizon => the two rules are the same")
+    print("computation. Compared per hand (not just in aggregate) over every cell.\n")
+
+    hands = 0
+    bad_records, bad_metrics = [], []
+    empty_sets = 0
+
+    hdr = f"{'cell':<34} {'hands':>6} {'records differing':>18} {'metrics differing':>18}"
+    print(hdr)
+    print("-" * len(hdr))
+
+    for subject in ["faithful", "adversarial"]:
+        for cond in ["passive", "random", "adaptive"]:
+            for seed in SEEDS:
+                g = [K.play_hand(cond, random.Random(seed), hand_no=k + 1,
+                                 subject=subject, observer="greedy")
+                     for k in range(HANDS)]
+                l = [K.play_hand(cond, random.Random(seed), hand_no=k + 1,
+                                 subject=subject, observer="lookahead")
+                     for k in range(HANDS)]
+
+                diffs = 0
+                for a, b in zip(g, l):
+                    fa = {k: v for k, v in a.items() if k not in _IGNORE}
+                    fb = {k: v for k, v in b.items() if k not in _IGNORE}
+                    if fa != fb:
+                        diffs += 1
+                        if len(bad_records) < 5:
+                            bad_records.append((cond, subject, seed, fa, fb))
+
+                ma, mb = _metrics(g), _metrics(l)
+                mdiff = [k for k in METRICS if abs(ma[k] - mb[k]) > 1e-12]
+                if mdiff:
+                    bad_metrics.append((cond, subject, seed, mdiff, ma, mb))
+
+                # Kuhn should never refute the model: justifies the absence of
+                # the impersonate/refute split that Leduc needs.
+                empty_sets += sum(1 for r in g + l if r["final_size"] == 0)
+
+                hands += len(g)
+                cell = f"{cond}/{subject} seed {seed}"
+                print(f"{cell:<34} {len(g):>6} {diffs:>18} {len(mdiff):>18}")
+
+    print(f"\ntotal hands compared: {hands} per rule ({2 * hands} played)")
+    print(f"per-hand records differing: {sum(1 for _ in bad_records) if bad_records else 0}"
+          f"{' (first 5 shown below)' if bad_records else ''}")
+    print(f"aggregate metrics differing: {len(bad_metrics)} cells")
+    print(f"hands ending with an EMPTY hypothesis set: {empty_sets} "
+          f"(Kuhn cannot refute the model, so impersonate/refute do not arise -- "
+          f"the split exists only in Leduc)")
+
+    for cond, subject, seed, fa, fb in bad_records:
+        print(f"\n  DIVERGENCE {cond}/{subject} seed {seed}")
+        for k in sorted(set(fa) | set(fb)):
+            if fa.get(k) != fb.get(k):
+                print(f"    {k}: greedy={fa.get(k)!r}  lookahead={fb.get(k)!r}")
+    for cond, subject, seed, mdiff, ma, mb in bad_metrics:
+        print(f"\n  METRIC DIVERGENCE {cond}/{subject} seed {seed}")
+        for k in mdiff:
+            print(f"    {k}: greedy={ma[k]!r}  lookahead={mb[k]!r}")
+
+    ok = not bad_records and not bad_metrics
+    print("\nRESULT: " + ("PASS -- identical hand for hand and metric for metric."
+                          if ok else
+                          "FAIL -- divergence found. STOP; one implementation is wrong."))
+    return ok
+
+
 def wilson(k, n, z=1.96):
     p = k / n
     d = 1 + z * z / n
@@ -173,6 +270,9 @@ def harden():
 
 if __name__ == "__main__":
     what = sys.argv[1] if len(sys.argv) > 1 else "all"
+    if what in ("verify", "all"):
+        if not verify() and what == "all":
+            sys.exit("gate failed; not running the sweeps")
     if what in ("adversary", "all"):
         sweep_adversary()
     if what in ("observer", "all"):

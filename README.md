@@ -15,7 +15,8 @@ No LLM. No learned distance metric. Exact set elimination over a finite space.
 python3 kuhn_intent.py  --hands 2000 --condition all --seed 1               # Kuhn, faithful subject
 python3 kuhn_intent.py  --hands 2000 --condition all --seed 1 --subject both  # + adversarial subject
 python3 leduc_intent.py --hands 2000 --condition all --seed 1 --subject both  # Leduc hold'em
-python3 sweep.py all                                                          # cost sweeps, seeds 1-3
+python3 sweep.py verify                                                       # gate: Kuhn greedy == lookahead
+python3 sweep.py all                                                          # gate + cost sweeps, seeds 1-3
 ```
 
 Requires Python 3.8+. No dependencies. Full numbers and interpretation in
@@ -89,8 +90,10 @@ all.
 chip maximisers. `sweep.py` produces the curves.
 
 **Leduc observer.** `leduc_intent.py` uses exact lookahead over the rest of
-the hand (`V`) instead of the one-step greedy rule; in Kuhn the two are
-verified identical hand-for-hand (`--observer lookahead`).
+the hand (`V`) instead of the one-step greedy rule. Kuhn has one betting round,
+so the two must coincide there; `python3 sweep.py verify` checks it over 36,000
+hands per rule, every record and every metric. The Leduc observer is a strict
+generalisation of the Kuhn one.
 
 ## Metrics
 

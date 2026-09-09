@@ -27,20 +27,47 @@ value_bet}. It pays 1 chip/hand for that concealment — the adversary has no ch
 objective, which is a modelling choice to revisit (a cost-aware adversary is the
 natural next variant).
 
-### Greedy vs. lookahead observer (sanity check)
+### Greedy vs. lookahead observer (gate)
 
 Kuhn's original adaptive rule is one-step greedy (`expected_posterior_size`);
-Leduc's is exact lookahead over the rest of the hand. `kuhn_intent.py` now has
-an independent history-based implementation of the lookahead rule
-(`--observer lookahead`, same code shape as Leduc's `V`). Per-hand JSON logs
-were diffed record by record: seeds 1-3, all three conditions, both subject
-types, 36,000 hands -- **0 differing records**. The Leduc observer is a strict
-generalisation of the Kuhn one. Reproduce:
+Leduc's is exact lookahead over the rest of the hand (`V`). `kuhn_intent.py`
+carries an independent history-based implementation of the lookahead rule
+(`--observer lookahead`, the same code shape as Leduc's).
+
+**These must coincide in Kuhn.** Kuhn has one betting round, so at every
+observer decision the remaining subtree is at most one subject reply plus the
+showdown — there is no "later" to look ahead to, and the lookahead recursion
+bottoms out in exactly the expectation the greedy rule already scores. A
+difference anywhere would mean one implementation is wrong, not that one rule
+is better.
+
+Verified over **36,000 hands per rule** (2000 hands x 3 seeds x 3 conditions x
+2 subject types; 72,000 hands played), comparing **every field of every
+per-hand record** and **every aggregate metric** (exact ID, |H| final,
+soundness, misID, contradiction, deviation, chips/hand, reveal):
 
 ```
-python3 kuhn_intent.py --hands 2000 --condition all --subject both --seed 1 --observer greedy    --log g.json
-python3 kuhn_intent.py --hands 2000 --condition all --subject both --seed 1 --observer lookahead --log l.json
-# then compare g.json and l.json ignoring the "observer" tag
+per-hand records differing:   0
+aggregate metrics differing:  0 cells (18 cells)
+```
+
+The comparison is per hand, not only in aggregate: two different rules could
+produce identical means over 2000 hands while disagreeing on individual hands,
+so an aggregate-only check would not catch a real divergence.
+
+**The Leduc observer is a strict generalisation of the Kuhn one.** Kuhn is the
+one-round special case of the same recursion; the greedy rule is not a separate
+method but that recursion evaluated at depth 1.
+
+The same run confirms that **no Kuhn hand ever reaches an empty hypothesis
+set** (0 of 72,000). This is why Kuhn has no `impersonate`/`refute` split: the
+two adversaries differ only in how they score an empty final set, an outcome
+Kuhn cannot produce. The distinction exists only in Leduc.
+
+Reproduce:
+
+```
+python3 sweep.py verify
 ```
 
 ## Leduc (`leduc_intent.py`, 7 intents, 35 hypotheses, two betting rounds)
