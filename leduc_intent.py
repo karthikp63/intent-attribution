@@ -17,8 +17,8 @@ Same architecture as kuhn_intent.py, on a bigger tree:
   * The ADVERSARIAL subject declares honestly, then plays to maximise the
     observer's expected final intent-set size (it knows the observer's rule
     and condition, not its card). Ties break toward the declared policy.
-    Two variants: "impersonate" must stay consistent with some intent;
-    "refute" may play in a way that matches no intent at all.
+    Two misfit modes: "in_model" stays consistent with some intent;
+    "out_of_model" may play in a way that matches no intent at all.
 
 Still no LLM, no learned metric: exact set elimination over 7 x 5 = 35
 hypotheses, exhaustive tree walk for both players' lookahead.
@@ -26,7 +26,7 @@ hypotheses, exhaustive tree walk for both players' lookahead.
 Usage:
     python leduc_intent.py --hands 2000 --condition all --subject both
     python leduc_intent.py --human --hands 10
-    python leduc_intent.py --hands 2000 --subject adversarial --deception-aware 1
+    python leduc_intent.py --hands 2000 --subject misfit --deception-aware 1
 """
 
 import argparse
@@ -356,25 +356,64 @@ def observer_action_dist(H, hist, observer_card, condition, mu=0.0):
     return {choose_observer_action(H, hist, observer_card, condition, None, mu): 1.0}
 
 
-# ------------------------------------------------------ adversarial subject
+# ---------------------------------------------------------- MODEL MISFIT
+#
+# THIS IS AN INSTRUMENT, NOT A SUBJECT MODEL. It generates behaviour the intent
+# model cannot explain, at controlled rates and with worst-case coverage. It is
+# not a claim that anyone plays this way.
+#
+# "Adversarial" was the wrong name for it. It implied someone who declares an
+# intent and then plays against it -- incoherent as a model of a person; nobody
+# lies to a dropdown and then acts against their own answer. What the condition
+# actually produces is MODEL MISFIT: behaviour the intent vocabulary does not
+# cover. That happens constantly with real subjects for ordinary reasons -- the
+# vocabulary is incomplete, they picked the nearest option from a menu that did
+# not fit, they changed their mind mid-hand, they misread a label, they played
+# badly. All of those look identical to the observer: same signal, same
+# contradiction, same failure mode. The generator maximises misfit because that
+# is how you get an upper bound on it, not because subjects optimise.
+#
+# Mechanically: DECLARES honestly (ground truth unchanged), then picks each
+# action to maximise the observer's expected final intent-set size. Worst case,
+# as in GRD: it knows the observer's selection rule and condition but not its
+# card. Ties break toward the declared policy, so it departs only when that
+# widens the gap.
 #
 # Belief over the observer's card instance, updated by the observer's own
 # actions (which are a deterministic function of its card under adaptive /
 # passive). Unnormalised weights are fine: every max compares branches
 # under the same scaling.
 
-# Two adversaries, differing only in how they score an EMPTY final set:
-#   impersonate: 0   -- must still look like *some* intent (deceiver hides
-#                       among the others; never refutes the model)
-#   refute:      |INTENTS| -- breaking the observer's model counts as full
-#                       concealment (the observer learned nothing)
-ADVERSARY_OBJECTIVES = ["impersonate", "refute"]
+# Two misfit modes, differing only in how they score an EMPTY final set:
+#   in_model:     0  -- the behaviour still matches *some* intent, so the
+#                       vocabulary covers it; misfit is only in WHICH intent.
+#   out_of_model: |INTENTS| -- the behaviour matches no intent at all, so the
+#                       vocabulary does not cover it. The observer's model is
+#                       refuted rather than merely confused.
+MISFIT_MODES = ["in_model", "out_of_model"]
+
+# Back-compatible names. The condition was called "adversarial" and its modes
+# "impersonate"/"refute" until the reframing; old commands and old logged
+# records still work.
+_SUBJECT_ALIASES = {"adversarial": "misfit"}
+_MODE_ALIASES = {"impersonate": "in_model", "refute": "out_of_model"}
+
+
+def normalise_subject(subject):
+    """'adversarial:impersonate' -> 'misfit:in_model'. Idempotent."""
+    head, _, mode = subject.partition(":")
+    head = _SUBJECT_ALIASES.get(head, head)
+    mode = _MODE_ALIASES.get(mode, mode)
+    return head + ":" + mode if mode else head
+
+
+ADVERSARY_OBJECTIVES = MISFIT_MODES          # deprecated alias, kept for callers
 
 
 def concealment(H, objective):
     if H:
         return len(intent_set(H))
-    return 0 if objective == "impersonate" else len(INTENTS)
+    return 0 if objective == "in_model" else len(INTENTS)
 
 
 # Cost: a WEIGHTED objective, concealment - lam * E[chips lost], rather than
@@ -413,7 +452,7 @@ def A(hist, belief, subject_card, condition, objective, mu=0.0, lam=0.0):
                for b, bl in branches.items())
 
 
-def adversary_belief(hist, subject_card, condition, mu=0.0):
+def misfit_belief(hist, subject_card, condition, mu=0.0):
     """Weights over observer cards consistent with the observer's play so far."""
     belief = tuple((o, 1.0) for o in DECK if o != subject_card)
     prefix = ()
@@ -432,8 +471,8 @@ def adversary_belief(hist, subject_card, condition, mu=0.0):
     return belief
 
 
-def adversarial_action(hist, subject_card, declared, condition, objective, mu=0.0, lam=0.0):
-    belief = adversary_belief(hist, subject_card, condition, mu)
+def misfit_action(hist, subject_card, declared, condition, objective, mu=0.0, lam=0.0):
+    belief = misfit_belief(hist, subject_card, condition, mu)
     scores = {a: A(hist + (a,), belief, subject_card, condition, objective, mu, lam)
               for a in legal(hist)}
     preferred = policy(declared, subject_card, hist)
@@ -445,7 +484,8 @@ def adversarial_action(hist, subject_card, declared, condition, objective, mu=0.
 
 def play_hand(condition, rng, human=False, hand_no=0, subject="faithful", mu=0.0, lam=0.0,
               deception_aware=0, state=None, orng=None):
-    """subject: faithful | adversarial:impersonate | adversarial:refute
+    """subject: faithful | misfit:in_model | misfit:out_of_model
+    (the old names adversarial / :impersonate / :refute are accepted too)
 
     deception_aware (task 4c): 0 = off, and every field below is exactly what
     the plain observer produces. k > 0 turns on the deception-aware observer:
@@ -471,14 +511,15 @@ def play_hand(condition, rng, human=False, hand_no=0, subject="faithful", mu=0.0
     # were not paired. Defaults to rng only for direct callers that predate it.
     if orng is None:
         orng = rng
-    adversarial = subject.startswith("adversarial")
-    objective = subject.split(":")[1] if adversarial else None
+    subject = normalise_subject(subject)
+    misfit = subject.startswith("misfit")
+    objective = subject.split(":")[1] if misfit else None
     deck = DECK[:]
     rng.shuffle(deck)
     subject_card, observer_card, board = deck[0], deck[1], deck[2]
 
     if human:
-        declared = prompt_declaration(subject_card, hand_no, adversarial)
+        declared = prompt_declaration(subject_card, hand_no, misfit)
     else:
         declared = rng.choice(INTENTS)
 
@@ -505,8 +546,8 @@ def play_hand(condition, rng, human=False, hand_no=0, subject="faithful", mu=0.0
             faithful = policy(declared, subject_card, hist)
             if human:
                 a = prompt_action(f"Round {round_seq(hist)[0]}, your move", legal(hist), faithful)
-            elif adversarial:
-                a = adversarial_action(hist, subject_card, declared, condition, objective, mu, lam)
+            elif misfit:
+                a = misfit_action(hist, subject_card, declared, condition, objective, mu, lam)
             else:
                 a = faithful
             subject_actions += 1
@@ -579,17 +620,17 @@ def play_hand(condition, rng, human=False, hand_no=0, subject="faithful", mu=0.0
 
 # ------------------------------------------------------------- human prompts
 
-ADVERSARIAL_BRIEF = """
-ADVERSARIAL CONDITION. Declare your intent honestly -- that is the ground
-truth and it is never shown to the observer. Then play to DEFEAT the
-observer: make it as hard as possible for it to work out what you declared.
-You may depart from the suggested action whenever you like.
+MISFIT_BRIEF = """
+MISFIT CONDITION. Declare your intent honestly -- that is the ground truth and
+it is never shown to the observer. Then play however you like, including in
+ways the declared intent does not describe. The point is to produce behaviour
+the intent vocabulary cannot account for.
 """
 
 
-def prompt_declaration(card, hand_no, adversarial=False):
-    if adversarial and hand_no == 1:
-        print(ADVERSARIAL_BRIEF)
+def prompt_declaration(card, hand_no, misfit=False):
+    if misfit and hand_no == 1:
+        print(MISFIT_BRIEF)
     print("\n" + "=" * 62)
     print(f"HAND {hand_no}   your card: {rank(card)}")
     print("=" * 62)
@@ -699,13 +740,15 @@ def main():
     ap.add_argument("--condition", default="all",
                     choices=["adaptive", "passive", "random", "all"])
     ap.add_argument("--subject", default="faithful",
-                    choices=["faithful", "adversarial", "both"],
-                    help="faithful: plays the declared policy; adversarial: declares "
-                         "honestly, then plays to defeat the observer")
-    ap.add_argument("--adversary", default="both",
-                    choices=ADVERSARY_OBJECTIVES + ["both"],
-                    help="impersonate: must still look like some intent; "
-                         "refute: may break the observer's model (empty set)")
+                    choices=["faithful", "misfit", "both", "adversarial"],
+                    help="faithful: plays the declared policy; misfit: declares honestly, "
+                         "then produces behaviour the intent model cannot explain "
+                         "('adversarial' is a deprecated alias for misfit)")
+    ap.add_argument("--misfit-mode", "--adversary", default="both", dest="misfit_mode",
+                    choices=MISFIT_MODES + ["both", "impersonate", "refute"],
+                    help="in_model: behaviour still matches SOME intent, so the vocabulary "
+                         "covers it; out_of_model: behaviour matches no intent at all "
+                         "(impersonate/refute are deprecated aliases)")
     ap.add_argument("--mu", type=float, default=0.0,
                     help="observer chip weight: minimise E[|H|] - mu * E[chips]")
     ap.add_argument("--lam", type=float, default=0.0,
@@ -726,12 +769,14 @@ def main():
 
     conditions = ["passive", "random", "adaptive"] if args.condition == "all" \
         else [args.condition]
-    advs = ADVERSARY_OBJECTIVES if args.adversary == "both" else [args.adversary]
+    mode = _MODE_ALIASES.get(args.misfit_mode, args.misfit_mode)
+    modes = MISFIT_MODES if mode == "both" else [mode]
+    want = _SUBJECT_ALIASES.get(args.subject, args.subject)
     subjects = []
-    if args.subject in ("faithful", "both"):
+    if want in ("faithful", "both"):
         subjects.append("faithful")
-    if args.subject in ("adversarial", "both"):
-        subjects += ["adversarial:" + o for o in advs]
+    if want in ("misfit", "both"):
+        subjects += ["misfit:" + m for m in modes]
 
     seeds = args.seeds if args.seeds else [args.seed]
     if args.human and len(seeds) > 1:

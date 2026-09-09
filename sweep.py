@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Sweeps and hardening for the cost-aware adversary / observer.
+Sweeps and hardening for the cost-aware misfit generator / observer.
 
     python3 sweep.py verify        # task 1: Kuhn greedy == lookahead, every metric
-    python3 sweep.py adversary     # task 2: concealment bought per chip (lam sweep)
+    python3 sweep.py misfit        # task 2: concealment bought per chip (lam sweep)
     python3 sweep.py observer      # task 3: identification kept per chip (mu sweep)
     python3 sweep.py harden        # misID confidence interval, contradiction timing
     python3 sweep.py deception     # task 4c: deception-aware observer, and what it costs
@@ -80,12 +80,12 @@ def table(title, rows):
 
 # ------------------------------------------------------------------ task 2
 
-def sweep_adversary():
-    print("\n## Task 2: cost-aware adversary vs. the adaptive observer (mu = 0)")
-    print("adversary maximises E[final |intent set|] - lam * E[chips lost]; "
+def sweep_misfit():
+    print("\n## Task 2: cost-aware misfit generator vs. the adaptive observer (mu = 0)")
+    print("misfit generator maximises E[final |intent set|] - lam * E[chips lost]; "
           "chips = observer's profit per hand")
-    for game, subjects in [("kuhn", ["adversarial"]),
-                           ("leduc", ["adversarial:impersonate", "adversarial:refute"])]:
+    for game, subjects in [("kuhn", ["misfit"]),
+                           ("leduc", ["misfit:in_model", "misfit:out_of_model"])]:
         for subj in subjects:
             rows = [("faithful", over_seeds(game, "adaptive", "faithful"))]
             for lam in GRID:
@@ -104,7 +104,7 @@ def sweep_observer():
             rows.append((f"mu={mu:g}", over_seeds(game, "adaptive", "faithful", mu=mu)))
         table(f"{game} / faithful subject", rows)
     print("\n### cross-check: cost-aware observer vs. the pure concealer (lam = 0), leduc")
-    for subj in ["adversarial:impersonate", "adversarial:refute"]:
+    for subj in ["misfit:in_model", "misfit:out_of_model"]:
         rows = [(f"mu={mu:g}", over_seeds("leduc", "adaptive", subj, mu=mu))
                 for mu in [0.0, 0.25, 1.0]]
         table(f"leduc / {subj}", rows)
@@ -151,7 +151,7 @@ def verify():
     print(hdr)
     print("-" * len(hdr))
 
-    for subject in ["faithful", "adversarial"]:
+    for subject in ["faithful", "misfit"]:
         for cond in ["passive", "random", "adaptive"]:
             for seed in SEEDS:
                 rg, og = random.Random(seed), random.Random(seed + 1_000_000)
@@ -176,7 +176,7 @@ def verify():
                     bad_metrics.append((cond, subject, seed, mdiff, ma, mb))
 
                 # Kuhn should never refute the model: justifies the absence of
-                # the impersonate/refute split that Leduc needs.
+                # the in_model / out_of_model split that Leduc needs.
                 empty_sets += sum(1 for r in g + l if r["final_size"] == 0)
 
                 hands += len(g)
@@ -188,8 +188,7 @@ def verify():
           f"{' (first 5 shown below)' if bad_records else ''}")
     print(f"aggregate metrics differing: {len(bad_metrics)} cells")
     print(f"hands ending with an EMPTY hypothesis set: {empty_sets} "
-          f"(Kuhn cannot refute the model, so impersonate/refute do not arise -- "
-          f"the split exists only in Leduc)")
+          f"(sampled; see the exhaustive proof below)")
 
     for cond, subject, seed, fa, fb in bad_records:
         print(f"\n  DIVERGENCE {cond}/{subject} seed {seed}")
@@ -201,11 +200,63 @@ def verify():
         for k in mdiff:
             print(f"    {k}: greedy={ma[k]!r}  lookahead={mb[k]!r}")
 
-    ok = not bad_records and not bad_metrics
+    ok = (not bad_records) and (not bad_metrics) and kuhn_coverage()
     print("\nRESULT: " + ("PASS -- identical hand for hand and metric for metric."
                           if ok else
                           "FAIL -- divergence found. STOP; one implementation is wrong."))
     return ok
+
+
+def kuhn_coverage():
+    """EXHAUSTIVE proof that Kuhn has no out_of_model behaviour.
+
+    Enumerate every COMPLETE history in the Kuhn tree (all subject and observer
+    action combinations) paired with every subject card, and check that some
+    intent generates the subject's decisions in it with that card. Showdown is
+    the hardest case: there the observer filters its set down to the true card,
+    so emptiness there is exactly "no intent explains this card's play". A
+    no-showdown history keeps other cards alive too, so it is strictly easier.
+
+    If every pair is covered, the hypothesis set can never empty in Kuhn, so
+    `out_of_model` is unreachable there and coincides with `in_model`. That is
+    a statement about the GAME -- stronger than "0 of 72,000 sampled hands".
+    """
+    print("\n### Exhaustive: can any Kuhn behaviour leave the intent model?\n")
+
+    def histories(hist):
+        if K.to_act(hist) == "terminal":
+            return [hist]
+        out = []
+        for a in K.legal(hist):
+            out += histories(hist + (a,))
+        return out
+
+    total = uncovered = 0
+    for card in K.CARDS:
+        for hist in histories(()):
+            # Intents that generate every subject decision in this history.
+            ok = []
+            for i in K.INTENTS:
+                prefix, good = (), True
+                for t in hist:
+                    if K.to_act(prefix) == "subject" and K.subject_policy(i, card, prefix) != t:
+                        good = False
+                        break
+                    prefix += (t,)
+                if good:
+                    ok.append(i)
+            total += 1
+            if not ok:
+                uncovered += 1
+                print(f"  UNCOVERED: card {card}, history {' '.join(hist)}")
+    print(f"  (card, complete history) pairs checked: {total}")
+    print(f"  explained by at least one intent: {total - uncovered}")
+    print(f"  explained by NO intent:           {uncovered}")
+    print("  => out_of_model is UNREACHABLE in Kuhn: the two misfit modes coincide there,\n"
+          "     which is why --misfit-mode exists only in Leduc."
+          if not uncovered else
+          "  => out_of_model IS reachable in Kuhn; the modes differ. Investigate.")
+    return uncovered == 0
 
 
 def wilson(k, n, z=1.96):
@@ -217,10 +268,10 @@ def wilson(k, n, z=1.96):
 
 
 def harden():
-    print("\n## Hardening: misattribution under the refute adversary (leduc, adaptive, mu=lam=0)\n")
+    print("\n## Hardening: misattribution under out_of_model misfit (leduc, adaptive, mu=lam=0)\n")
     pooled = []
     for s in SEEDS:
-        rows = run("leduc", "adaptive", "adversarial:refute", s)
+        rows = run("leduc", "adaptive", "misfit:out_of_model", s)
         pooled += rows
         k = sum(r["misattributed"] for r in rows)
         p, lo, hi = wilson(k, len(rows))
@@ -281,7 +332,7 @@ def harden():
 #   M1  play for chips on refutation. When the hypothesis set empties there is
 #       no model left to plan against, so fall back to exact chip-optimal play
 #       under a no-model assumption.
-#       Falsifier: chips/hand on exactly the hands that refute before an
+#       Falsifier: chips/hand on exactly the hands that refute the model before an
 #       observer decision remains must improve. If it does not, M1 is inert.
 #       This falsifier has already earned its keep: the first version of M1
 #       FOLDED on refutation, and the measurement caught it losing 6.1 chips a
@@ -341,9 +392,9 @@ def deception():
     hdr = f"{'subject / lam':<28} {'hands':>7} {'chips/hand passive':>20} {'chips/hand no-model':>21} {'delta':>8}"
     print(hdr)
     print("-" * len(hdr))
-    for label, subj, lam in [("refute lam=0", "adversarial:refute", 0.0),
-                             ("refute lam=2", "adversarial:refute", 2.0),
-                             ("impersonate lam=2", "adversarial:impersonate", 2.0)]:
+    for label, subj, lam in [("out_of_model lam=0", "misfit:out_of_model", 0.0),
+                             ("out_of_model lam=2", "misfit:out_of_model", 2.0),
+                             ("in_model lam=2", "misfit:in_model", 2.0)]:
         off_n = off_c = on_n = on_c = 0
         for s in SEEDS:
             off = _run_state("leduc", "adaptive", subj, s, lam=lam, deception_aware=0)
@@ -365,9 +416,9 @@ def deception():
 
     KS = [0, 1, 2, 3, 5]
     for label, subj, lam in [("faithful (control)", "faithful", 0.0),
-                             ("refute, lam=0", "adversarial:refute", 0.0),
-                             ("chip maximiser, lam=2", "adversarial:refute", 2.0),
-                             ("impersonate, lam=2", "adversarial:impersonate", 2.0)]:
+                             ("out_of_model, lam=0", "misfit:out_of_model", 0.0),
+                             ("chip maximiser, lam=2", "misfit:out_of_model", 2.0),
+                             ("in_model, lam=2", "misfit:in_model", 2.0)]:
         print(f"#### {label}   (n = 6000)")
         hdr = (f"{'k':<5} {'exact ID (report)':>26} {'misID (report)':>26} "
                f"{'abstain':>26} {'chips/hand':>24}")
@@ -398,9 +449,9 @@ def deception():
     print(hdr)
     print("-" * len(hdr))
     for label, subj, lam in [("faithful", "faithful", 0.0),
-                             ("refute lam=0", "adversarial:refute", 0.0),
-                             ("chip maximiser lam=2", "adversarial:refute", 2.0),
-                             ("impersonate lam=2", "adversarial:impersonate", 2.0)]:
+                             ("out_of_model lam=0", "misfit:out_of_model", 0.0),
+                             ("chip maximiser lam=2", "misfit:out_of_model", 2.0),
+                             ("in_model lam=2", "misfit:in_model", 2.0)]:
         firsts, never = [], 0
         for s in SEEDS:
             rows = _run_state("leduc", "adaptive", subj, s, lam=lam, deception_aware=1)
@@ -422,8 +473,8 @@ if __name__ == "__main__":
     if what in ("verify", "all"):
         if not verify() and what == "all":
             sys.exit("gate failed; not running the sweeps")
-    if what in ("adversary", "all"):
-        sweep_adversary()
+    if what in ("misfit", "adversary", "all"):    # "adversary": deprecated alias
+        sweep_misfit()
     if what in ("observer", "all"):
         sweep_observer()
     if what in ("harden", "all"):

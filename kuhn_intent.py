@@ -14,7 +14,7 @@ Usage:
     python kuhn_intent.py --hands 200 --condition all
     python kuhn_intent.py --hands 200 --condition all --log runs.json
     python kuhn_intent.py --hands 2000 --condition all --subject both
-    python kuhn_intent.py --human --hands 10 --subject adversarial
+    python kuhn_intent.py --human --hands 10 --subject misfit
 """
 
 import argparse
@@ -272,18 +272,39 @@ def choose_lookahead_action(H, hist, observer_card, mu):
     best = min(s for s, _ in scored)
     return min((a for s, a in scored if s == best), key=lambda a: ACTION_COST[a])
 
-# ------------------------------------------------------ adversarial subject
+# ---------------------------------------------------------- MODEL MISFIT
 #
-# The subject still DECLARES honestly (ground truth is unchanged) but then
-# plays to defeat the observer: at each decision it picks the action that
-# maximises the observer's expected final intent-set size. Worst case, as in
-# the GRD literature: the subject knows the observer's selection rule and
-# condition, but not the observer's card (uniform over the other two).
-# Ties break toward the declared policy (minimal deviation).
+# AN INSTRUMENT, NOT A SUBJECT MODEL. It generates behaviour the intent model
+# cannot explain, at controlled rates and with worst-case coverage. See the
+# longer note in leduc_intent.py. "Adversarial" was the wrong name: it implied
+# someone who declares an intent and then plays against it, which is incoherent
+# as a model of a person. What this produces is model misfit -- an incomplete
+# vocabulary, a nearest-option answer to a menu that did not fit, a change of
+# mind, a misread label, bad play. They are indistinguishable to the observer.
+#
+# Mechanically: declares honestly, then picks each action to maximise the
+# observer's expected final intent-set size, knowing the observer's rule and
+# condition but not its card. Ties break toward the declared policy.
+
+# Kuhn has no in_model / out_of_model split: every (card, action-path) pair is
+# consistent with at least one intent, so the set can never empty and
+# out_of_model is unreachable. `sweep.py verify` proves this by enumeration.
+MISFIT_MODES = ["in_model"]
+_SUBJECT_ALIASES = {"adversarial": "misfit"}
+_MODE_ALIASES = {"impersonate": "in_model", "refute": "out_of_model"}
+
+
+def normalise_subject(subject):
+    """'adversarial' -> 'misfit'. Idempotent."""
+    head, _, mode = subject.partition(":")
+    head = _SUBJECT_ALIASES.get(head, head)
+    mode = _MODE_ALIASES.get(mode, mode)
+    return head + ":" + mode if mode else head
+
 
 def concealment(H):
-    """Adversary's objective. Kuhn never reaches an empty set, so the
-    impersonate/refute distinction of Leduc does not arise here."""
+    """Misfit objective. Kuhn never reaches an empty set, so the
+    in_model / out_of_model distinction of Leduc does not arise here."""
     return len(intent_set(H)) if H else len(INTENTS)
 
 
@@ -320,7 +341,7 @@ def A(hist, belief, subject_card, condition, observer, mu, lam):
                for a, bl in branches.items())
 
 
-def adversary_belief(hist, subject_card, condition, observer, mu):
+def misfit_belief(hist, subject_card, condition, observer, mu):
     belief = [(o, 1.0) for o in CARDS if o != subject_card]
     prefix = ()
     for t in hist:
@@ -336,8 +357,8 @@ def adversary_belief(hist, subject_card, condition, observer, mu):
     return belief
 
 
-def adversarial_action(hist, subject_card, declared, condition, observer, mu, lam):
-    belief = adversary_belief(hist, subject_card, condition, observer, mu)
+def misfit_action(hist, subject_card, declared, condition, observer, mu, lam):
+    belief = misfit_belief(hist, subject_card, condition, observer, mu)
     scores = {a: A(hist + (a,), belief, subject_card, condition, observer, mu, lam)
               for a in legal(hist)}
     preferred = subject_policy(declared, subject_card, hist)
@@ -349,7 +370,8 @@ def adversarial_action(hist, subject_card, declared, condition, observer, mu, la
 
 def play_hand(condition, rng, human=False, hand_no=0, subject="faithful",
               observer="greedy", mu=0.0, lam=0.0, orng=None):
-    adversarial = subject == "adversarial"
+    subject = normalise_subject(subject)
+    misfit = subject == "misfit"
     # `orng` is the observer's OWN random stream, separate from `rng`, which
     # deals the cards and picks the declaration. Without the split, the random
     # condition drew its own actions from the deal stream and thereby dealt
@@ -363,7 +385,7 @@ def play_hand(condition, rng, human=False, hand_no=0, subject="faithful",
 
     # --- the declaration. Made BEFORE acting. Never shown to the observer.
     if human:
-        declared = prompt_declaration(subject_card, observer_card, hand_no, adversarial)
+        declared = prompt_declaration(subject_card, observer_card, hand_no, misfit)
     else:
         declared = rng.choice(INTENTS)
 
@@ -378,8 +400,8 @@ def play_hand(condition, rng, human=False, hand_no=0, subject="faithful",
     faithful_open = opening_action(declared, subject_card)
     if human:
         opening = prompt_action("Your move", ["check", "bet"], suggested=faithful_open)
-    elif adversarial:
-        opening = adversarial_action((), subject_card, declared, condition, observer, mu, lam)
+    elif misfit:
+        opening = misfit_action((), subject_card, declared, condition, observer, mu, lam)
     else:
         opening = faithful_open
     subject_actions += 1
@@ -410,9 +432,9 @@ def play_hand(condition, rng, human=False, hand_no=0, subject="faithful",
             if human:
                 resp = prompt_action("Observer bets. Your move", ["fold", "call"],
                                      suggested=faithful_resp)
-            elif adversarial:
-                resp = adversarial_action(("check", "bet"), subject_card, declared,
-                                          condition, observer, mu, lam)
+            elif misfit:
+                resp = misfit_action(("check", "bet"), subject_card, declared,
+                                     condition, observer, mu, lam)
             else:
                 resp = faithful_resp
             subject_actions += 1
@@ -430,7 +452,7 @@ def play_hand(condition, rng, human=False, hand_no=0, subject="faithful",
     return {
         "hand": hand_no,
         "condition": condition,
-        "subject": subject,                  # log tag: faithful | adversarial
+        "subject": subject,                  # log tag: faithful | misfit
         "observer": observer, "mu": mu, "lam": lam,
         "subject_card": subject_card,
         "observer_card": observer_card,
@@ -450,17 +472,17 @@ def play_hand(condition, rng, human=False, hand_no=0, subject="faithful",
 
 # ------------------------------------------------------------- human prompts
 
-ADVERSARIAL_BRIEF = """
-ADVERSARIAL CONDITION. Declare your intent honestly -- that is the ground
-truth and it is never shown to the observer. Then play to DEFEAT the
-observer: make it as hard as possible for it to work out what you declared.
-You may depart from the suggested action whenever you like.
+MISFIT_BRIEF = """
+MISFIT CONDITION. Declare your intent honestly -- that is the ground truth and
+it is never shown to the observer. Then play however you like, including in
+ways the declared intent does not describe. The point is to produce behaviour
+the intent vocabulary cannot account for.
 """
 
 
-def prompt_declaration(card, observer_card, hand_no, adversarial=False):
-    if adversarial and hand_no == 1:
-        print(ADVERSARIAL_BRIEF)
+def prompt_declaration(card, observer_card, hand_no, misfit=False):
+    if misfit and hand_no == 1:
+        print(MISFIT_BRIEF)
     print("\n" + "=" * 62)
     print(f"HAND {hand_no}   your card: {card}   (observer holds {observer_card}"
           f" -- shown to you only for calibration)")
@@ -568,9 +590,10 @@ def main():
                     help="run several seeds and report mean [min, max] per metric "
                          "(overrides --seed)")
     ap.add_argument("--subject", default="faithful",
-                    choices=["faithful", "adversarial", "both"],
-                    help="faithful: plays the declared policy; adversarial: declares "
-                         "honestly, then plays to defeat the observer")
+                    choices=["faithful", "misfit", "both", "adversarial"],
+                    help="faithful: plays the declared policy; misfit: declares honestly, "
+                         "then produces behaviour the intent model cannot explain "
+                         "('adversarial' is a deprecated alias for misfit)")
     ap.add_argument("--observer", default="greedy", choices=["greedy", "lookahead"],
                     help="adaptive rule: one-step greedy (original) or exact lookahead "
                          "(same code shape as Leduc); must agree in Kuhn")
@@ -585,7 +608,8 @@ def main():
     conditions = ["passive", "random", "adaptive"] if args.condition == "all" \
         else [args.condition]
 
-    subjects = ["faithful", "adversarial"] if args.subject == "both" else [args.subject]
+    want = _SUBJECT_ALIASES.get(args.subject, args.subject)
+    subjects = ["faithful", "misfit"] if want == "both" else [want]
 
     seeds = args.seeds if args.seeds else [args.seed]
     if args.human and len(seeds) > 1:

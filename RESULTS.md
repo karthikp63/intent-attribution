@@ -24,11 +24,37 @@ between-condition comparison.
 > `passive`/`adaptive` numbers reproduce the previously committed values
 > exactly.
 
-Subjects: **faithful** plays its declared policy; **adversarial** declares
+**Subjects.** **faithful** plays its declared policy. **misfit** declares
 honestly (ground truth unchanged), then picks each action to maximise the
-observer's expected final intent-set size. The adversary knows the observer's
-selection rule and condition but not its card (worst case, as in GRD).
-Ties break toward the declared policy, so it deviates only when it gains.
+observer's expected final intent-set size, knowing the observer's selection
+rule and condition but not its card (worst case, as in GRD). Ties break toward
+the declared policy, so it departs from it only when that widens the gap.
+
+> **The misfit generator is an INSTRUMENT, not a subject model.** It exists to
+> produce behaviour the intent model cannot explain, at controlled rates and
+> with worst-case coverage. It is *not* a claim that anyone plays this way.
+>
+> It used to be called "adversarial", and that name was wrong. It implied a
+> subject who declares an intent and then plays against it — incoherent as a
+> model of a person. Nobody lies to a dropdown and then acts against their own
+> answer. What the condition actually produces is **model misfit**: behaviour
+> the intent vocabulary does not cover. That happens constantly with real
+> subjects, for entirely ordinary reasons — the vocabulary is incomplete, they
+> picked the nearest option from a menu that did not fit, they changed their
+> mind mid-hand, they misread a label, they played badly.
+>
+> **All of those look identical to the observer**: same signal, same
+> contradiction, same failure mode. The generator maximises misfit because
+> that is how you get an upper bound on it, not because subjects optimise.
+> Every "the subject beats the observer" result below should be read as "the
+> observer fails this badly when its vocabulary does not fit the subject".
+>
+> The two modes name the two ways a vocabulary can fail. `in_model`: the
+> behaviour still matches *some* intent, so the vocabulary covers it and the
+> misfit is only in *which* intent — the nearest-option case. `out_of_model`:
+> the behaviour matches no intent at all, so the vocabulary does not cover it.
+> The old names `adversarial`, `impersonate` and `refute` still work on the
+> command line and in logged records.
 
 ## Kuhn (`kuhn_intent.py`, 5 intents, 10 hypotheses)
 
@@ -40,18 +66,18 @@ condition                    exact ID           |H| final              sound   m
 passive/faithful       6.8% [6.6%,7.0%]   2.85 [2.84,2.86]              100%    0.0%             100%             0.0%   +0.001 [-0.011,+0.018]
 random/faithful      10.6% [10.2%,10.9%]  2.55 [2.54,2.57]              100%    0.0%   63.4% [62.5,63.9]          0.0%   +0.032 [+0.011,+0.049]
 adaptive/faithful    20.8% [19.9%,21.6%]  2.06 [2.04,2.08]              100%    0.0%   59.8% [58.3,61.1]          0.0%   +0.411 [+0.375,+0.449]
-passive/adversarial            0.0%       3.32 [3.31,3.33]  66.3% [65.5,67.2]   0.0%             100%   33.7% [32.8,34.5]  +0.007 [-0.009,+0.021]
-random/adversarial             0.0%       3.00 [2.99,3.02]  59.9% [58.9,61.2]   0.0%   50.5% [50.3,50.7]  40.3% [39.7,41.2]  +0.489 [+0.471,+0.506]
-adaptive/adversarial           0.0%       2.67 [2.66,2.68]  53.5% [52.0,54.5]   0.0%             0.0%    43.5% [42.6,44.4]  +1.000 [+1.000,+1.000]
+passive/misfit            0.0%       3.32 [3.31,3.33]  66.3% [65.5,67.2]   0.0%             100%   33.7% [32.8,34.5]  +0.007 [-0.009,+0.021]
+random/misfit             0.0%       3.00 [2.99,3.02]  59.9% [58.9,61.2]   0.0%   50.5% [50.3,50.7]  40.3% [39.7,41.2]  +0.489 [+0.471,+0.506]
+adaptive/misfit           0.0%       2.67 [2.66,2.68]  53.5% [52.0,54.5]   0.0%             0.0%    43.5% [42.6,44.4]  +1.000 [+1.000,+1.000]
 ```
 
-Degradation under adversarial play: exact ID 20.8% → 0%, |H| final 2.06 → 2.67,
-soundness 100% → 53.5%. Adaptive still ends with the smallest set. The adversary's
+Degradation under misfit: exact ID 20.8% → 0%, |H| final 2.06 → 2.67,
+soundness 100% → 53.5%. Adaptive still ends with the smallest set. The generator's
 best reply to the adaptive observer is check-then-fold every hand (reveal 0%):
 the largest reachable set in Kuhn is the check-fold bucket {bluff, give_up,
-value_bet}. It pays 1 chip/hand for that concealment — the adversary has no chip
-objective, which is a modelling choice to revisit (a cost-aware adversary is the
-natural next variant).
+value_bet}. It pays 1 chip/hand for that concealment — this generator has no chip
+objective, which is a modelling choice to revisit (a cost-aware one is the
+natural next variant, and is Task 2).
 
 ### Greedy vs. lookahead observer (gate)
 
@@ -86,9 +112,12 @@ one-round special case of the same recursion; the greedy rule is not a separate
 method but that recursion evaluated at depth 1.
 
 The same run confirms that **no Kuhn hand ever reaches an empty hypothesis
-set** (0 of 72,000). This is why Kuhn has no `impersonate`/`refute` split: the
-two adversaries differ only in how they score an empty final set, an outcome
-Kuhn cannot produce. The distinction exists only in Leduc.
+set** (0 of 72,000) — and `kuhn_coverage()` in the same gate proves it
+**exhaustively** rather than by sampling: all **15** (card, complete history)
+pairs in the Kuhn tree are explained by at least one intent, so the hypothesis
+set can never empty there. This is why Kuhn has no `in_model`/`out_of_model`
+split: the two modes differ only in how they score an empty final set, an
+outcome the game cannot produce. `--misfit-mode` exists only in Leduc.
 
 Reproduce:
 
@@ -106,12 +135,12 @@ condition                              exact ID           |H| final             
 passive/faithful                 28.0% [27.4,28.7]  3.16 [3.12,3.23]              100%               0.0%               0.0%               0.0%   -0.121 [-0.207,-0.072]
 random/faithful                  20.4% [19.9,20.9]  3.29 [3.27,3.33]              100%               0.0%               0.0%               0.0%   -0.243 [-0.270,-0.225]
 adaptive/faithful                38.5% [37.8,39.4]  2.65 [2.62,2.66]              100%               0.0%               0.0%               0.0%   -0.509 [-0.539,-0.490]
-passive/adversarial:impersonate            0.0%     4.19 [4.17,4.22]  60.5% [59.8,61.8]              0.0%               0.0%  24.3% [23.7,24.6]   -0.016 [-0.036,-0.004]
-random/adversarial:impersonate             0.0%     4.72 [4.71,4.74]  67.4% [66.3,68.6]              0.0%               0.0%  35.6% [35.0,36.0]   +0.740 [+0.736,+0.744]
-adaptive/adversarial:impersonate           0.0%     4.64 [4.63,4.65]  65.7% [64.3,67.0]              0.0%               0.0%  36.6% [36.4,36.8]   +0.903 [+0.901,+0.907]
-passive/adversarial:refute                 0.0%     1.96 [1.88,2.00]  28.3% [27.1,29.3]              0.0%  46.2% [45.0,48.0]  54.0% [52.8,56.0]   -0.182 [-0.216,-0.147]
-random/adversarial:refute          1.2% [1.1,1.4]   1.85 [1.78,1.91]  27.0% [26.2,27.9]     5.4% [5.2,5.9]  51.9% [51.0,53.1]  38.8% [38.6,39.2]   +0.488 [+0.471,+0.501]
-adaptive/adversarial:refute        1.5% [1.2,1.8]   1.64 [1.60,1.66]  23.3% [23.0,23.9]     6.4% [6.0,6.7]  56.7% [56.3,57.5]  51.9% [51.5,52.7]   +0.433 [+0.279,+0.515]
+passive/misfit:in_model            0.0%     4.19 [4.17,4.22]  60.5% [59.8,61.8]              0.0%               0.0%  24.3% [23.7,24.6]   -0.016 [-0.036,-0.004]
+random/misfit:in_model             0.0%     4.72 [4.71,4.74]  67.4% [66.3,68.6]              0.0%               0.0%  35.6% [35.0,36.0]   +0.740 [+0.736,+0.744]
+adaptive/misfit:in_model           0.0%     4.64 [4.63,4.65]  65.7% [64.3,67.0]              0.0%               0.0%  36.6% [36.4,36.8]   +0.903 [+0.901,+0.907]
+passive/misfit:out_of_model                 0.0%     1.96 [1.88,2.00]  28.3% [27.1,29.3]              0.0%  46.2% [45.0,48.0]  54.0% [52.8,56.0]   -0.182 [-0.216,-0.147]
+random/misfit:out_of_model          1.2% [1.1,1.4]   1.85 [1.78,1.91]  27.0% [26.2,27.9]     5.4% [5.2,5.9]  51.9% [51.0,53.1]  38.8% [38.6,39.2]   +0.488 [+0.471,+0.501]
+adaptive/misfit:out_of_model        1.5% [1.2,1.8]   1.64 [1.60,1.66]  23.3% [23.0,23.9]     6.4% [6.0,6.7]  56.7% [56.3,57.5]  51.9% [51.5,52.7]   +0.433 [+0.279,+0.515]
 ```
 
 * **Not a Kuhn artifact.** Adaptive beats passive and random on both exact ID
@@ -123,15 +152,16 @@ adaptive/adversarial:refute        1.5% [1.2,1.8]   1.64 [1.60,1.66]  23.3% [23.
   Leduc it loses 0.51/hand because probing is a 4-chip bet in round 2. Both are
   real; the selection rule ignores payoff by design, and this is what a
   cost-aware rule would need to fix.
-* **Two adversaries.** `impersonate` must stay consistent with some intent
-  (empty set scores 0 for it); `refute` may play like nobody (empty set scores
+* **Two misfit modes.** `in_model` must stay consistent with some intent
+  (empty set scores 0 for it); `out_of_model` may play like nobody (empty set scores
   as full concealment). They are qualitatively different opponents:
-  impersonate drives |H| up (4.64) with 0% exact ID; refute drives the observer
+  in_model drives |H| up (4.64) with 0% exact ID; out_of_model drives the observer
   into contradiction 50–58% of the time and produces misattribution (6.7% of
   hands end on exactly one intent, the wrong one — worse than ambiguity).
-  Which adversary matters is a question for the group; both are reported.
+  Which one matters is a question for the group; both are reported. They are
+  two different ways for a vocabulary to fail, not two different opponents.
 * **Soundness is now a measurement.** 100% by construction for faithful play;
-  60–68% for impersonate, 23–28% for refute. This is the number a human pilot
+  60–68% for in_model, 23–28% for out_of_model. This is the number a human pilot
   will fill in for real subjects.
 
 Representative Leduc trace (declared bluff, subject K1, observer J0):
@@ -144,10 +174,10 @@ check → bet → call → board J1 → check → bet → call     final: [bluff
 ```
 
 
-## Task 2: cost-aware adversary — how much concealment does a chip buy?
+## Task 2: cost-aware misfit generator — how much concealment does a chip buy?
 
 Adversary objective: maximise `E[final |intent set|] - lam * E[chips lost]`.
-**Weighted, not a hard budget**, because the adversary is already an
+**Weighted, not a hard budget**, because the generator is already an
 expectation-max recursion over the tree: a weight folds into the terminal
 value and every node stays a plain max, whereas a hard constraint on expected
 loss needs a Lagrangian (i.e. this `lam`, found by search) or a constrained
@@ -155,7 +185,7 @@ search over mixed strategies. `lam=0` is the pure concealer from the first
 tables; `lam=1000` is effectively a pure chip maximiser (concealment only
 breaks ties, toward the declared policy). Observer: adaptive, `mu=0`.
 Cells: mean over seeds 1–3 [min, max], 2000 hands each.
-`python3 sweep.py adversary`
+`python3 sweep.py misfit`
 
 ### Kuhn
 ```
@@ -172,7 +202,7 @@ lam=4               0.0% [0.0%,0.0%]      2.34 [2.34,2.35]   45.8% [45.2%,46.9%]
 lam=1000            0.0% [0.0%,0.0%]      2.34 [2.34,2.35]   45.8% [45.2%,46.9%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]   40.5% [38.9%,41.3%]-0.328 [-0.354,-0.303]
 ```
 
-### Leduc, impersonate
+### Leduc, in_model
 ```
 setting                        exact                     H                 sound                 misID                contra               deviate                 chips
 ------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -187,7 +217,7 @@ lam=4            10.8% [10.4%,11.5%]      1.30 [1.29,1.31]   21.2% [20.2%,22.9%]
 lam=1000         10.8% [10.4%,11.5%]      1.30 [1.29,1.31]   21.2% [20.2%,22.9%]   55.0% [53.8%,56.1%]    10.1% [9.6%,11.1%]   41.2% [40.8%,41.9%]-4.604 [-4.679,-4.510]
 ```
 
-### Leduc, refute
+### Leduc, out_of_model
 ```
 setting                        exact                     H                 sound                 misID                contra               deviate                 chips
 ------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -205,15 +235,17 @@ lam=1000         10.8% [10.4%,11.5%]      1.30 [1.29,1.31]   21.2% [20.2%,22.9%]
 **Reading.**
 
 * **Kuhn: concealment is free.** The pure concealer (`lam=0`) pays a chip a
-  hand for 0% exact ID. At `lam=0.25` the adversary is break-even (−0.008)
+  hand for 0% exact ID. At `lam=0.25` the subject is break-even (−0.008)
   and exact ID is still 0%, |H| 2.50 vs 2.06 faithful. At `lam>=1` the
-  adversary is a pure chip maximiser: it *beats* the adaptive observer
+  subject is a pure chip maximiser: it *beats* the adaptive observer
   (−0.33/hand for the observer, which made +0.41 against a faithful subject),
   and exact ID is still 0%. The observer's identification advantage in Kuhn
   existed only because the subject was faithful; a player who simply plays to
-  win conceals intent as a side effect. "Your adversary is unrealistic" does
-  not rescue the observer — the realistic one is worse for it.
-* **Leduc, impersonate: break-even still hurts.** Break-even sits between
+  win conceals intent as a side effect. "Your misfit generator is unrealistic"
+  does not rescue the observer — the realistic subject is worse for it. This is
+  the sharpest form of the reframing: a person who is simply playing to win,
+  with no interest in the observer at all, produces the same signal.
+* **Leduc, in_model: break-even still hurts.** Break-even sits between
   `lam=0.25` (observer +0.57) and `lam=0.5` (observer −0.74); on both sides
   exact ID is ≤1% and |H| ≥ 3.95 (faithful: 38.5%, 2.65). At `lam>=1` the chip
   maximiser wins 4.3–4.6 chips/hand from the `mu=0` observer — the
@@ -221,11 +253,11 @@ lam=1000         10.8% [10.4%,11.5%]      1.30 [1.29,1.31]   21.2% [20.2%,22.9%]
   misattribution**: the observer collapses to exactly one intent and it is
   the wrong one. Exact ID actually rises to ~11% there, because a profit
   maximiser plays *some* intents faithfully by coincidence.
-* **Leduc, refute:** at `lam=0.1` the adversary is break-even (−0.07) with
-  59% contradictions and 8.7% misattribution. Above `lam=1` the refute and
-  impersonate adversaries converge on the same chip-maximising play.
-* At break-even, in every game and against both adversary types, the
-  adversary still holds exact ID at ≤1.5%. Concealment does not have to be
+* **Leduc, out_of_model:** at `lam=0.1` the subject is break-even (−0.07) with
+  59% contradictions and 8.7% misattribution. Above `lam=1` the two modes
+  converge on the same chip-maximising play.
+* At break-even, in every game and in both misfit modes, the subject still
+  holds exact ID at ≤1.5%. Concealment does not have to be
   bought; playing well delivers it.
 
 
@@ -234,7 +266,7 @@ lam=1000         10.8% [10.4%,11.5%]      1.30 [1.29,1.31]   21.2% [20.2%,22.9%]
 Observer objective: minimise `E[final |intent set|] - mu * E[chips]`,
 computed by the same exact lookahead (`V`), with the expectation over
 hypotheses in the current set under the uniform prior. Parameterised the same
-way as the adversary so the two are directly comparable. `mu=0` is the
+way as the misfit generator so the two are directly comparable. `mu=0` is the
 information-only rule; `mu=1000` is effectively a chip maximiser among
 information ties. Subject: faithful. `python3 sweep.py observer`
 
@@ -275,7 +307,7 @@ mu=1000          22.4% [22.1%,22.6%]      3.04 [3.03,3.06]100.0% [100.0%,100.0%]
 ```
 
 ### Cost-aware observer against the pure concealer (Leduc, `lam=0`)
-Impersonate:
+in_model:
 ```
 setting                        exact                     H                 sound                 misID                contra               deviate                 chips
 ------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -283,7 +315,7 @@ mu=0                0.0% [0.0%,0.0%]      4.64 [4.63,4.65]   65.7% [64.3%,67.0%]
 mu=0.25             0.0% [0.0%,0.0%]      4.67 [4.66,4.68]   66.2% [64.8%,67.5%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]   35.8% [35.7%,36.0%]+0.903 [+0.901,+0.907]
 mu=1                0.0% [0.0%,0.0%]      4.81 [4.80,4.82]   67.9% [66.4%,69.0%]      0.0% [0.0%,0.0%]      0.0% [0.0%,0.0%]   40.7% [40.4%,41.1%]+0.903 [+0.901,+0.907]
 ```
-Refute:
+out_of_model:
 ```
 setting                        exact                     H                 sound                 misID                contra               deviate                 chips
 ------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -306,9 +338,9 @@ mu=1                0.0% [0.0%,0.0%]      0.93 [0.92,0.93]   13.2% [12.7%,13.6%]
   +0.65, `mu>=2` gives 22.4% at +0.79 — still above passive (28.0%) on |H| but
   below it on exact ID, so at that point the observer is a chip maximiser
   that happens to learn things.
-* **Against the concealer, `mu` is not a defence.** Against impersonate the
+* **Against the concealer, `mu` is not a defence.** Against in_model the
   chip-aware observer wins the same +0.90 and identifies nothing at any `mu`.
-  Against refute it makes things worse for identification (contradictions
+  Against out_of_model it makes things worse for identification (contradictions
   rise to 80% at `mu=1`) but it does remove misattribution (6.4% → 0.5% →
   0.0%): a chip-aware observer probes less, so it commits to a single wrong
   intent less often. That is a reason to run `mu>0` even if the number one
@@ -317,7 +349,7 @@ mu=1                0.0% [0.0%,0.0%]      0.93 [0.92,0.93]   13.2% [12.7%,13.6%]
 
 ## Hardening the misattribution result
 
-The refute adversary (Leduc, adaptive observer, `mu=lam=0`) makes the
+The out_of_model generator (Leduc, adaptive observer, `mu=lam=0`) makes the
 observer collapse onto exactly one *wrong* intent. `python3 sweep.py harden`:
 
 ```
@@ -363,7 +395,7 @@ contradiction hands: 3403
 * **The number holds up.** Pooled over 6000 hands, misID = 6.4%, 95% Wilson
   CI [5.8%, 7.0%]; per-seed 6.0–6.7%. Contradiction = 56.7% [55.5%, 58.0%].
   Note from Task 2 that misID is *far* higher (41–55%) against a
-  chip-maximising subject than against the pure refuter; 6.4% is the
+  chip-maximising subject than against the pure out_of_model generator; 6.4% is the
   conservative end.
 * **Contradiction and misattribution never co-occur** in a hand, by
   construction: the hypothesis set only shrinks, so once empty it stays
@@ -386,7 +418,7 @@ contradiction hands: 3403
   pot_control) and then plays round 2 in a way only one of them would. Every
   intent gets misread as `value_bet` or `probe` most often: those are the two
   policies that bet round 1 with the widest range of cards, so they are the
-  easiest to impersonate. This is the Paris-neuron point in our own data —
+  easiest to be mistaken for. This is the Paris-neuron point in our own data —
   a bet looks like value only until you ask what else produces that bet.
 
 ## Task 4c: a deception-aware observer
@@ -418,11 +450,11 @@ declaration.
 **The first version of this mechanism was wrong, and the measurement caught
 it.** The rule suggested by the earlier hardening pass was *fold* on refutation
 — "nothing left to learn, so stop paying for it." Measured on exactly the hands
-that refute while an observer decision remains:
+that refute the model while an observer decision remains:
 
 ```
                                hands   chips/hand passive   chips/hand FOLD    delta
-refute lam=0                     397               -0.612            -6.748   -6.136
+out_of_model lam=0               397               -0.612            -6.748   -6.136
 ```
 
 Six chips a hand *worse*. The premise conflated two different things: refuting
@@ -437,9 +469,9 @@ left to plan against (`chip_value_no_model`):
 
 ```
                                hands   chips/hand passive   chips/hand no-model    delta
-refute lam=0                     397               -0.612                +1.705   +2.317
-refute lam=2                     608              -11.000                -7.000   +4.000
-impersonate lam=2                608              -11.000                -7.000   +4.000
+out_of_model lam=0               397               -0.612                +1.705   +2.317
+out_of_model lam=2               608              -11.000                -7.000   +4.000
+in_model lam=2                   608              -11.000                -7.000   +4.000
 ```
 
 A losing spot becomes a winning one. The comparison is paired: M1 only changes
@@ -459,34 +491,34 @@ faithful (control)         0              38.5%             0.0%          0.0%  
 faithful (control)         1              38.5%             0.0%          0.0%        -0.509
 faithful (control)         5              38.5%             0.0%          0.0%        -0.509
 
-refute, lam=0              0               1.5%             6.4%         56.7%        +0.433
-refute, lam=0              1               0.0%             0.0%         64.6%        +0.587
-refute, lam=0              5               0.0%             0.0%         64.6%        +0.587
+out_of_model, lam=0        0               1.5%             6.4%         56.7%        +0.433
+out_of_model, lam=0        1               0.0%             0.0%         64.6%        +0.587
+out_of_model, lam=0        5               0.0%             0.0%         64.6%        +0.587
 
 chip maximiser, lam=2      0              10.0%            46.6%         12.8%        -4.422
 chip maximiser, lam=2      1               0.1%             0.1%         69.2%        -4.016
 chip maximiser, lam=2      5               0.2%             0.7%         68.4%        -4.016
 
-impersonate, lam=2         0              10.0%            49.2%         10.1%        -4.503
-impersonate, lam=2         1               0.1%             0.5%         68.8%        -4.098
-impersonate, lam=2         5               0.3%             1.4%         67.7%        -4.098
+in_model, lam=2            0              10.0%            49.2%         10.1%        -4.503
+in_model, lam=2            1               0.1%             0.5%         68.8%        -4.098
+in_model, lam=2            5               0.3%             1.4%         67.7%        -4.098
 ```
 
 **The trade, stated as a rate:**
 
 | subject | misID removed | exact ID given up | confident-wrong removed per confident-right lost |
 |---|---|---|---|
-| refute, `lam=0` | 6.4% → 0.0% | 1.5% → 0.0% | **4.3** |
+| `out_of_model`, `lam=0` | 6.4% → 0.0% | 1.5% → 0.0% | **4.3** |
 | chip maximiser, `lam=2` | 46.6% → 0.7% | 10.0% → 0.2% | **4.7** |
-| impersonate, `lam=2` | 49.2% → 1.4% | 10.0% → 0.3% | **4.9** |
+| `in_model`, `lam=2` | 49.2% → 1.4% | 10.0% → 0.3% | **4.9** |
 
 **How fast the flag fires** (hands until the subject first refutes the model):
 
 ```
 faithful                  never (0 refutations in 6000 hands)
-refute lam=0              median 1,  mean 1.0
+out_of_model lam=0        median 1,  mean 1.0
 chip maximiser lam=2      median 6,  mean 6.3
-impersonate lam=2         median 6,  mean 16.7
+in_model lam=2            median 6,  mean 16.7
 ```
 
 **Reading.**
@@ -497,7 +529,7 @@ impersonate lam=2         median 6,  mean 16.7
   places. This is the falsifier for M2: if the trigger were reading anything
   it should not, a faithful number would move. None does. Abstention costs
   nothing against honest subjects.
-* **The conversion is real and it is cheap.** Against every adversary the
+* **The conversion is real and it is cheap.** Against every misfit setting the
   observer trades roughly **one correct confident claim for between four and
   five wrong ones removed**. Against the chip maximiser — the realistic
   opponent, and the one that produced the worst misattribution in Task 2 — it
@@ -507,25 +539,25 @@ impersonate lam=2         median 6,  mean 16.7
   threshold is another chance to commit. One proof is enough; waiting for
   corroboration only buys mistakes.
 * **What is left is honest ambiguity, not knowledge.** Abstention is ~65–69% of
-  hands. The observer is not identifying intent against an adversary — it is
+  hands. The observer is not identifying intent under misfit — it is
   now *saying so* instead of guessing. That is the whole accountability claim
   and it should not be oversold as identification.
 * **Limitations.** The abstention is coarse: it suppresses every singleton
   claim after refutation, correct ones included (that is exactly the 1.5–10%
   of exact ID given up). And it is a defence against subjects who *break* the
-  model, not against one who stays inside it — a pure `impersonate` adversary
+  model, not against behaviour that stays inside it — pure `in_model` misfit
   at `lam=0` never refutes, so the flag never fires. It needs no defence there
-  only because that adversary drives |H| *up* (4.64) rather than onto a wrong
+  only because that mode drives |H| *up* (4.64) rather than onto a wrong
   singleton: its misID is already 0.0%. A subject that could misattribute
   without ever contradicting would defeat M2, and nothing here rules one out.
 
 ## Commands
 
 ```
-python3 kuhn_intent.py  --hands 2000 --condition all --subject both --seed 1
-python3 leduc_intent.py --hands 2000 --condition all --subject both --seed 1
-python3 leduc_intent.py --human --hands 10 --subject adversarial --adversary impersonate --log pilot.json
-python3 kuhn_intent.py  --hands 2000 --condition adaptive --subject adversarial --lam 0.25 --observer lookahead
+python3 kuhn_intent.py  --hands 2000 --condition all --subject both --seeds 1 2 3
+python3 leduc_intent.py --hands 2000 --condition all --subject both --seeds 1 2 3
+python3 leduc_intent.py --human --hands 10 --subject misfit --misfit-mode in_model --log pilot.json
+python3 kuhn_intent.py  --hands 2000 --condition adaptive --subject misfit --lam 0.25 --observer lookahead
 python3 leduc_intent.py --hands 2000 --condition adaptive --mu 0.1
 python3 sweep.py verify       # gate: Kuhn greedy == lookahead, 36k hands per rule
 python3 sweep.py deception    # task 4c: deception-aware observer
@@ -533,6 +565,6 @@ python3 sweep.py all          # gate + every table above, seeds 1-3
 python3 leduc_intent.py --hands 2000 --condition all --subject both --seeds 1 2 3
 ```
 
-Per-hand JSON records carry a `subject` tag (`faithful`, `adversarial:impersonate`,
-`adversarial:refute`), the full action history, deviation count, and the
+Per-hand JSON records carry a `subject` tag (`faithful`, `misfit:in_model`,
+`misfit:out_of_model`), the full action history, deviation count, and the
 surviving intent set after every action.
