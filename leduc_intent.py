@@ -26,6 +26,7 @@ hypotheses, exhaustive tree walk for both players' lookahead.
 Usage:
     python leduc_intent.py --hands 2000 --condition all --subject both
     python leduc_intent.py --human --hands 10
+    python leduc_intent.py --hands 2000 --subject adversarial --deception-aware 1
 """
 
 import argparse
@@ -292,7 +293,36 @@ def V(H, hist, observer_card, mu=0.0):
     return min(V(H, hist + (a,), observer_card, mu) for a in legal(hist))
 
 
-def choose_observer_action(H, hist, observer_card, condition, rng, mu=0.0):
+def chip_value_no_model(hist, observer_card, cards):
+    """Observer's expected chips from `hist` on once its intent model is
+    REFUTED: uniform over the subject's remaining card instances, and a
+    subject whose future actions are uniform over its legal moves -- because
+    an empty hypothesis set means the observer has no model of this subject
+    left to plan against. Exact enumeration, no sampling."""
+    who = to_act(hist)
+    n = len(cards)
+    if who == "terminal":
+        return sum(observer_payoff(hist, c, observer_card) for c in cards) / n
+    if who == "chance":
+        v = 0.0
+        for b in DECK:
+            if b == observer_card:
+                continue
+            rem = [c for c in cards if c != b]
+            if rem:
+                v += len(rem) / (4 * n) * chip_value_no_model(
+                    hist + ("board:" + b,), observer_card, rem)
+        return v
+    if who == "subject":
+        acts = legal(hist)
+        return sum(chip_value_no_model(hist + (a,), observer_card, cards)
+                   for a in acts) / len(acts)
+    return max(chip_value_no_model(hist + (a,), observer_card, cards)
+               for a in legal(hist))
+
+
+def choose_observer_action(H, hist, observer_card, condition, rng, mu=0.0,
+                           refuted_chip_play=False):
     acts = legal(hist)
     if condition == "passive":
         return "check" if "check" in acts else "call"
@@ -300,6 +330,18 @@ def choose_observer_action(H, hist, observer_card, condition, rng, mu=0.0):
         return rng.choice(acts)
     if condition == "adaptive":
         if not H:                                # model refuted; nothing to learn
+            # Deception-aware (task 4c, mechanism 1). The first version of
+            # this folded -- "nothing left to learn, so stop paying". That was
+            # WRONG and the measurement caught it: refuting the INTENT model
+            # says nothing about CARD equity, and the observer still holds the
+            # stronger hand in 45% of these spots, so folding forfeited pots it
+            # would have won (-0.61 -> -6.75 chips/hand). What it should do is
+            # play for chips with no model at all.
+            if refuted_chip_play:
+                board = board_of(hist)
+                cards = [c for c in DECK if c != observer_card and c != board]
+                return max(legal(hist),
+                           key=lambda a: chip_value_no_model(hist + (a,), observer_card, cards))
             return "check" if "check" in acts else "call"
         scored = [(V(H, hist + (a,), observer_card, mu), a) for a in acts]
         best = min(s for s, _ in scored)
@@ -401,8 +443,27 @@ def adversarial_action(hist, subject_card, declared, condition, objective, mu=0.
 
 # --------------------------------------------------------------- one hand
 
-def play_hand(condition, rng, human=False, hand_no=0, subject="faithful", mu=0.0, lam=0.0):
-    """subject: faithful | adversarial:impersonate | adversarial:refute"""
+def play_hand(condition, rng, human=False, hand_no=0, subject="faithful", mu=0.0, lam=0.0,
+              deception_aware=0, state=None):
+    """subject: faithful | adversarial:impersonate | adversarial:refute
+
+    deception_aware (task 4c): 0 = off, and every field below is exactly what
+    the plain observer produces. k > 0 turns on the deception-aware observer:
+
+      M1  when the hypothesis set empties mid-hand, play for chips with no
+          model rather than drifting on passively.
+      M2  once this subject has refuted the model in k PRIOR hands, stop
+          issuing single-intent conclusions and report "contradicted" instead.
+
+    M2 is a deductive trigger, not a statistical one. An empty set is proof
+    that the subject is not faithful to any intent -- and "the subject is
+    faithful to some intent" is the premise every elimination conclusion rests
+    on. After a refutation, a confident claim rests on a disproved premise.
+    The flag uses ONLY what the observer can see (its own set going empty);
+    it never touches the declaration.
+
+    `state` carries the refutation count across hands within one subject.
+    """
     adversarial = subject.startswith("adversarial")
     objective = subject.split(":")[1] if adversarial else None
     deck = DECK[:]
@@ -416,6 +477,9 @@ def play_hand(condition, rng, human=False, hand_no=0, subject="faithful", mu=0.0
 
     hist = ()
     H = initial_hypotheses(observer_card)
+    # Flag reflects PRIOR hands only; this hand's refutation is counted after.
+    refuted_before = state.get("refutations", 0) if state is not None else 0
+    flagged = deception_aware > 0 and refuted_before >= deception_aware
     trace = []
     subject_actions = deviations = 0
     contradiction_at = None          # index in history at which H became empty
@@ -444,7 +508,8 @@ def play_hand(condition, rng, human=False, hand_no=0, subject="faithful", mu=0.0
             if not H and contradiction_at is None:
                 contradiction_at = len(hist)
         else:
-            a = choose_observer_action(H, hist, observer_card, condition, rng, mu)
+            a = choose_observer_action(H, hist, observer_card, condition, rng, mu,
+                                       refuted_chip_play=deception_aware > 0)
             observer_moves_after += contradiction_at is not None
             if human:
                 print(f"  observer: {a}")
@@ -456,6 +521,22 @@ def play_hand(condition, rng, human=False, hand_no=0, subject="faithful", mu=0.0
         if not H and contradiction_at is None:
             contradiction_at = "showdown"    # play fit some intent, the revealed card fit none
     final = intent_set(H)
+
+    # What the observer actually REPORTS, as distinct from the surviving set.
+    # With deception_aware = 0 these mirror the set-level fields exactly, so
+    # every existing number is untouched.
+    if len(final) == 0:
+        reported = "contradicted"        # this hand refuted the model outright
+    elif flagged and len(final) == 1:
+        reported = "contradicted"        # premise already disproved: no confident claim
+    elif len(final) == 1:
+        reported = final[0]
+    else:
+        reported = None                  # ambiguous set; not a confident claim either way
+
+    if state is not None and len(final) == 0:
+        state["refutations"] = refuted_before + 1
+
     return {
         "hand": hand_no,
         "condition": condition,
@@ -473,6 +554,14 @@ def play_hand(condition, rng, human=False, hand_no=0, subject="faithful", mu=0.0
         "contradiction": len(final) == 0,
         "contradiction_at": contradiction_at,   # history index, "showdown", or None
         "observer_moves_after_contradiction": observer_moves_after,
+        # --- task 4c: report level (== set level when deception_aware = 0)
+        "deception_aware": deception_aware,
+        "flagged": flagged,                       # subject had already refuted the model
+        "reported": reported,                     # intent | "contradicted" | None
+        "report_exact": reported == declared,
+        "report_misID": reported is not None and reported != "contradicted"
+                        and reported != declared,
+        "abstained": flagged and len(final) == 1,  # confident claim withheld
         "subject_actions": subject_actions,
         "deviations": deviations,
         "card_revealed": is_showdown(hist),
@@ -531,10 +620,13 @@ def summarise(rows):
     n = len(rows)
     return {
         "hands": n,
-        "exact_id_rate": sum(r["exact"] for r in rows) / n,
+        "exact_id_rate": sum(r["report_exact"] for r in rows) / n,
         "soundness": sum(r["sound"] for r in rows) / n,
         "mean_final_set": sum(r["final_size"] for r in rows) / n,
-        "misattribution": sum(r["misattributed"] for r in rows) / n,
+        # Report level: what the observer actually CLAIMED. Identical to the
+        # set-level fields whenever --deception-aware is 0.
+        "misattribution": sum(r["report_misID"] for r in rows) / n,
+        "abstain": sum(r["reported"] == "contradicted" for r in rows) / n,
         "contradiction": sum(r["contradiction"] for r in rows) / n,
         "reveal_rate": sum(r["card_revealed"] for r in rows) / n,
         "deviation_rate": sum(r["deviations"] for r in rows)
@@ -545,20 +637,21 @@ def summarise(rows):
 
 def print_table(results):
     hdr = (f"{'condition':<30} {'exact ID':>9} {'|H| final':>10} {'sound':>7} {'misID':>6} "
-           f"{'contra':>7} {'reveal':>7} {'deviate':>8} {'chips/hand':>11}")
+           f"{'contra':>7} {'abstain':>8} {'reveal':>7} {'deviate':>8} {'chips/hand':>11}")
     print("\n" + hdr)
     print("-" * len(hdr))
     for cond, s in results.items():
         print(f"{cond:<30} {s['exact_id_rate']:>8.1%} {s['mean_final_set']:>10.2f} "
               f"{s['soundness']:>6.0%} {s['misattribution']:>6.1%} {s['contradiction']:>7.1%} "
-              f"{s['reveal_rate']:>7.0%} {s['deviation_rate']:>8.1%} {s['mean_chips']:>+11.3f}")
+              f"{s['abstain']:>8.1%} {s['reveal_rate']:>7.0%} {s['deviation_rate']:>8.1%} {s['mean_chips']:>+11.3f}")
     print()
     print(f"intents: {len(INTENTS)}; hypotheses: {len(INTENTS)} x 5 card instances = {5 * len(INTENTS)}")
-    print("exact ID   = hypothesis set collapsed to exactly the declared intent")
+    print("exact ID   = observer named exactly the declared intent")
     print("|H| final  = mean number of intents still standing at hand's end (lower is better)")
     print("sound      = declared intent never wrongly eliminated (100% by construction for a faithful subject)")
-    print("misID      = set collapsed to exactly one intent, and it is the wrong one")
+    print("misID      = observer named exactly one intent, and it is the wrong one")
     print("contra     = every hypothesis eliminated: the subject's play matched no intent at all")
+    print("abstain    = observer reported 'contradicted' rather than naming a single intent")
     print("reveal     = fraction of hands reaching showdown (card revealed)")
     print("deviate    = fraction of subject decisions that departed from the declared policy")
     print("chips/hand = observer's mean profit; the cost side of the information trade")
@@ -584,6 +677,12 @@ def main():
                     help="observer chip weight: minimise E[|H|] - mu * E[chips]")
     ap.add_argument("--lam", type=float, default=0.0,
                     help="adversary chip weight: maximise E[|H|] - lam * E[chips lost]")
+    ap.add_argument("--deception-aware", type=int, default=0, metavar="K",
+                    dest="deception_aware",
+                    help="deception-aware observer: after K prior hands in which the "
+                         "subject refuted the model, report 'contradicted' rather than a "
+                         "single intent; and play for chips once refuted mid-hand. "
+                         "0 = off (default)")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--human", action="store_true", help="play as the subject")
     ap.add_argument("--log", metavar="PATH", help="write per-hand JSON records")
@@ -602,12 +701,17 @@ def main():
     for subj in subjects:
         for cond in conditions:
             rng = random.Random(args.seed)
+            state = {"refutations": 0}          # carried across this subject's hands
             rows = [play_hand(cond, rng, human=args.human, hand_no=k + 1, subject=subj,
-                              mu=args.mu, lam=args.lam)
+                              mu=args.mu, lam=args.lam,
+                              deception_aware=args.deception_aware, state=state)
                     for k in range(args.hands)]
             if args.human:
                 for r in rows:
                     print(f"\n  observer's surviving intents: {', '.join(r['final_set']) or '(none)'}")
+                    if r["reported"] == "contradicted":
+                        print("  observer reports: CONTRADICTED -- no intent explains this"
+                              + ("  (subject already refuted the model)" if r["abstained"] else ""))
                     print(f"  you declared: {r['declared']}   ->  "
                           f"{'PINNED' if r['exact'] else ('in set' if r['sound'] else 'ELIMINATED')}")
             all_rows += rows

@@ -359,6 +359,136 @@ contradiction hands: 3403
   easiest to impersonate. This is the Paris-neuron point in our own data —
   a bet looks like value only until you ask what else produces that bet.
 
+## Task 4c: a deception-aware observer
+
+`python3 sweep.py deception`. Two mechanisms. Each has a measurement that would
+show it is *not* working, and one of them failed that measurement first time —
+see M1.
+
+### The structural fact that shapes the whole thing
+
+Within a single hand, contradiction and misattribution are **disjoint by
+construction**: the hypothesis set only shrinks, so a hand that reaches the
+empty set ends empty, and misID means it never did. So **no within-hand rule
+can convert a misattribution into an abstention** — in the hand that goes
+wrong, the signal is not there to be read. Reporting "contradicted" instead of
+collapsing is still the right thing to do, but on its own it converts exactly
+zero misattributions.
+
+The signal exists **across** hands. A contradiction is not evidence, it is
+*proof* that the subject is not faithful to any intent — and "the subject is
+faithful to some intent" is the premise every elimination conclusion rests on.
+Once the observer has seen one, every later confident claim rests on a premise
+it has already disproved. That is the deduction M2 acts on, and it uses only
+what the observer can see (its own set going empty); it never touches the
+declaration.
+
+### M1: play for chips once the model is refuted
+
+**The first version of this mechanism was wrong, and the measurement caught
+it.** The rule suggested by the earlier hardening pass was *fold* on refutation
+— "nothing left to learn, so stop paying for it." Measured on exactly the hands
+that refute while an observer decision remains:
+
+```
+                               hands   chips/hand passive   chips/hand FOLD    delta
+refute lam=0                     397               -0.612            -6.748   -6.136
+```
+
+Six chips a hand *worse*. The premise conflated two different things: refuting
+the **intent model** says nothing about **card equity**. The observer still
+holds the stronger hand in **45.3%** of those spots (62/137, seed 1), and
+folding forfeits every one of them.
+
+The corrected rule plays for chips with *no model at all* — exact enumeration
+over the remaining subtree, uniform over the subject's possible cards and over
+its future actions, because an empty hypothesis set means there is no model
+left to plan against (`chip_value_no_model`):
+
+```
+                               hands   chips/hand passive   chips/hand no-model    delta
+refute lam=0                     397               -0.612                +1.705   +2.317
+refute lam=2                     608              -11.000                -7.000   +4.000
+impersonate lam=2                608              -11.000                -7.000   +4.000
+```
+
+A losing spot becomes a winning one. The comparison is paired: M1 only changes
+what the observer does *after* the set is empty, so the same hands qualify
+under both rules (397 and 397, 608 and 608).
+
+### M2: cross-hand abstention — the confident-wrong / known-unknown trade
+
+`k` = report "contradicted" instead of a single intent once the subject has
+refuted the model in `k` prior hands. `k=0` is the plain observer. Mean over
+seeds 1–3 [min, max], **n = 6000** (2000 hands x 3 seeds).
+
+```
+subject                    k    exact ID (report)   misID (report)      abstain    chips/hand
+---------------------------------------------------------------------------------------------
+faithful (control)         0              38.5%             0.0%          0.0%        -0.509
+faithful (control)         1              38.5%             0.0%          0.0%        -0.509
+faithful (control)         5              38.5%             0.0%          0.0%        -0.509
+
+refute, lam=0              0               1.5%             6.4%         56.7%        +0.433
+refute, lam=0              1               0.0%             0.0%         64.6%        +0.587
+refute, lam=0              5               0.0%             0.0%         64.6%        +0.587
+
+chip maximiser, lam=2      0              10.0%            46.6%         12.8%        -4.422
+chip maximiser, lam=2      1               0.1%             0.1%         69.2%        -4.016
+chip maximiser, lam=2      5               0.2%             0.7%         68.4%        -4.016
+
+impersonate, lam=2         0              10.0%            49.2%         10.1%        -4.503
+impersonate, lam=2         1               0.1%             0.5%         68.8%        -4.098
+impersonate, lam=2         5               0.3%             1.4%         67.7%        -4.098
+```
+
+**The trade, stated as a rate:**
+
+| subject | misID removed | exact ID given up | confident-wrong removed per confident-right lost |
+|---|---|---|---|
+| refute, `lam=0` | 6.4% → 0.0% | 1.5% → 0.0% | **4.3** |
+| chip maximiser, `lam=2` | 46.6% → 0.7% | 10.0% → 0.2% | **4.7** |
+| impersonate, `lam=2` | 49.2% → 1.4% | 10.0% → 0.3% | **4.9** |
+
+**How fast the flag fires** (hands until the subject first refutes the model):
+
+```
+faithful                  never (0 refutations in 6000 hands)
+refute lam=0              median 1,  mean 1.0
+chip maximiser lam=2      median 6,  mean 6.3
+impersonate lam=2         median 6,  mean 16.7
+```
+
+**Reading.**
+
+* **The control is the point.** A faithful subject never refutes the model, so
+  the flag never fires, so **every faithful number is unchanged at every `k`**
+  — 38.5% exact ID, 0.0% misID, −0.509 chips, identical to three decimal
+  places. This is the falsifier for M2: if the trigger were reading anything
+  it should not, a faithful number would move. None does. Abstention costs
+  nothing against honest subjects.
+* **The conversion is real and it is cheap.** Against every adversary the
+  observer trades roughly **one correct confident claim for between four and
+  five wrong ones removed**. Against the chip maximiser — the realistic
+  opponent, and the one that produced the worst misattribution in Task 2 — it
+  converts a 46.6% confident-wrong rate into a 0.7% one.
+* **`k=1` is the right setting, and higher `k` is strictly worse.** misID
+  creeps back up (0.1% → 0.7% at `k=5`) because every unflagged hand before the
+  threshold is another chance to commit. One proof is enough; waiting for
+  corroboration only buys mistakes.
+* **What is left is honest ambiguity, not knowledge.** Abstention is ~65–69% of
+  hands. The observer is not identifying intent against an adversary — it is
+  now *saying so* instead of guessing. That is the whole accountability claim
+  and it should not be oversold as identification.
+* **Limitations.** The abstention is coarse: it suppresses every singleton
+  claim after refutation, correct ones included (that is exactly the 1.5–10%
+  of exact ID given up). And it is a defence against subjects who *break* the
+  model, not against one who stays inside it — a pure `impersonate` adversary
+  at `lam=0` never refutes, so the flag never fires. It needs no defence there
+  only because that adversary drives |H| *up* (4.64) rather than onto a wrong
+  singleton: its misID is already 0.0%. A subject that could misattribute
+  without ever contradicting would defeat M2, and nothing here rules one out.
+
 ## Commands
 
 ```

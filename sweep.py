@@ -6,6 +6,7 @@ Sweeps and hardening for the cost-aware adversary / observer.
     python3 sweep.py adversary     # task 2: concealment bought per chip (lam sweep)
     python3 sweep.py observer      # task 3: identification kept per chip (mu sweep)
     python3 sweep.py harden        # misID confidence interval, contradiction timing
+    python3 sweep.py deception     # task 4c: deception-aware observer, and what it costs
     python3 sweep.py all
 
 Every cell: 2000 hands per seed, seeds 1-3; table shows the seed mean and,
@@ -268,6 +269,148 @@ def harden():
         print(f"    {' '.join(h):<60} x{c}")
 
 
+# ------------------------------------------------- task 4c: deception-aware
+#
+# Two mechanisms, each with a measurement that would show it is NOT working.
+#
+#   M1  play for chips on refutation. When the hypothesis set empties there is
+#       no model left to plan against, so fall back to exact chip-optimal play
+#       under a no-model assumption.
+#       Falsifier: chips/hand on exactly the hands that refute before an
+#       observer decision remains must improve. If it does not, M1 is inert.
+#       This falsifier has already earned its keep: the first version of M1
+#       FOLDED on refutation, and the measurement caught it losing 6.1 chips a
+#       hand. See RESULTS.md.
+#
+#   M2  cross-hand abstention. An empty set is PROOF that the subject is not
+#       faithful to any intent -- which is the premise every elimination
+#       conclusion rests on. After k such proofs, stop issuing single-intent
+#       conclusions and report "contradicted" instead.
+#       Falsifier: against a FAITHFUL subject the flag must never fire, so
+#       every faithful number must be unchanged for every k. If a faithful
+#       number moves, the trigger is reading something it should not.
+#
+# Note what M2 is NOT. Within a single hand, contradiction and misattribution
+# are disjoint by construction (the set only shrinks, so a hand that empties
+# ends empty; misID means it never emptied). So no within-hand rule can convert
+# a misattribution into an abstention -- the signal simply is not there in the
+# hand that goes wrong. It is there ACROSS hands, and that is the only place
+# the conversion can come from.
+
+def _run_state(game, condition, subject, seed, mu=0.0, lam=0.0, deception_aware=0):
+    """Like run(), but threads refutation state across the hands of a subject."""
+    rng = random.Random(seed)
+    mod = GAMES[game]
+    state = {"refutations": 0}
+    return [mod.play_hand(condition, rng, hand_no=k + 1, subject=subject, mu=mu, lam=lam,
+                          deception_aware=deception_aware, state=state)
+            for k in range(HANDS)]
+
+
+def _report_stats(rows):
+    n = len(rows)
+    return {
+        "exact": sum(r["report_exact"] for r in rows) / n,
+        "misID": sum(r["report_misID"] for r in rows) / n,
+        "abstain": sum(r["reported"] == "contradicted" for r in rows) / n,
+        "withheld": sum(r["abstained"] for r in rows) / n,
+        "H": sum(r["final_size"] for r in rows) / n,
+        "chips": sum(r["observer_chips"] for r in rows) / n,
+    }
+
+
+def _mean_range(per, keys):
+    return {k: (sum(p[k] for p in per) / len(per), min(p[k] for p in per), max(p[k] for p in per))
+            for k in keys}
+
+
+def deception():
+    print("\n## Task 4c: deception-aware observer\n")
+
+    # ---------------------------------------------------------------- M1
+    print("### M1: play for chips on refutation")
+    print("Measured on exactly the hands where the set empties while an observer")
+    print("decision still remains. Everything before that point is identical, so")
+    print("the same hands qualify under both observers -- a paired comparison.\n")
+    hdr = f"{'subject / lam':<28} {'hands':>7} {'chips/hand passive':>20} {'chips/hand no-model':>21} {'delta':>8}"
+    print(hdr)
+    print("-" * len(hdr))
+    for label, subj, lam in [("refute lam=0", "adversarial:refute", 0.0),
+                             ("refute lam=2", "adversarial:refute", 2.0),
+                             ("impersonate lam=2", "adversarial:impersonate", 2.0)]:
+        off_n = off_c = on_n = on_c = 0
+        for s in SEEDS:
+            off = _run_state("leduc", "adaptive", subj, s, lam=lam, deception_aware=0)
+            on = _run_state("leduc", "adaptive", subj, s, lam=lam, deception_aware=1)
+            o = [r for r in off if r["observer_moves_after_contradiction"] > 0]
+            n_ = [r for r in on if r["observer_moves_after_contradiction"] > 0]
+            off_n += len(o); off_c += sum(r["observer_chips"] for r in o)
+            on_n += len(n_); on_c += sum(r["observer_chips"] for r in n_)
+        a = off_c / max(1, off_n)
+        b = on_c / max(1, on_n)
+        flag = "" if off_n == on_n else f"  (!! hand counts differ: {off_n} vs {on_n})"
+        print(f"{label:<28} {off_n:>7} {a:>+20.3f} {b:>+21.3f} {b - a:>+8.3f}{flag}")
+
+    # ---------------------------------------------------------------- M2
+    print("\n### M2: cross-hand abstention -- the confident-wrong / known-unknown trade")
+    print("k = report 'contradicted' instead of a single intent once the subject has")
+    print("refuted the model in k prior hands. k=0 is the plain observer.")
+    print("Cells: mean over seeds 1-3 [min, max], n = 2000 hands per seed (6000 total).\n")
+
+    KS = [0, 1, 2, 3, 5]
+    for label, subj, lam in [("faithful (control)", "faithful", 0.0),
+                             ("refute, lam=0", "adversarial:refute", 0.0),
+                             ("chip maximiser, lam=2", "adversarial:refute", 2.0),
+                             ("impersonate, lam=2", "adversarial:impersonate", 2.0)]:
+        print(f"#### {label}   (n = 6000)")
+        hdr = (f"{'k':<5} {'exact ID (report)':>26} {'misID (report)':>26} "
+               f"{'abstain':>26} {'chips/hand':>24}")
+        print(hdr)
+        print("-" * len(hdr))
+        base = None
+        for k in KS:
+            per = [_report_stats(_run_state("leduc", "adaptive", subj, s, lam=lam,
+                                            deception_aware=k)) for s in SEEDS]
+            m = _mean_range(per, ["exact", "misID", "abstain", "chips"])
+            if k == 0:
+                base = m
+            print(f"{k:<5} {fmt(m['exact']):>26} {fmt(m['misID']):>26} "
+                  f"{fmt(m['abstain']):>26} {fmt(m['chips'], pct=False, signed=True):>24}")
+        d_mis = base["misID"][0] - m["misID"][0]
+        d_ex = base["exact"][0] - m["exact"][0]
+        ratio = (d_mis / d_ex) if d_ex > 1e-9 else float("inf")
+        print(f"      k=0 -> k=5: misID {base['misID'][0]:.1%} -> {m['misID'][0]:.1%} "
+              f"(-{d_mis:.1%}), exact ID {base['exact'][0]:.1%} -> {m['exact'][0]:.1%} "
+              f"(-{d_ex:.1%});  " +
+              (f"{ratio:.1f} confident-wrong removed per confident-right given up"
+               if ratio != float("inf") else "no confident-right given up"))
+        print()
+
+    # ------------------------------------------------- how fast does it fire
+    print("### How fast does the flag fire? (hands until the subject first refutes)")
+    hdr = f"{'subject / lam':<28} {'median':>8} {'mean':>8} {'never refuted (of 3 seeds)':>28}"
+    print(hdr)
+    print("-" * len(hdr))
+    for label, subj, lam in [("faithful", "faithful", 0.0),
+                             ("refute lam=0", "adversarial:refute", 0.0),
+                             ("chip maximiser lam=2", "adversarial:refute", 2.0),
+                             ("impersonate lam=2", "adversarial:impersonate", 2.0)]:
+        firsts, never = [], 0
+        for s in SEEDS:
+            rows = _run_state("leduc", "adaptive", subj, s, lam=lam, deception_aware=1)
+            idx = next((i + 1 for i, r in enumerate(rows) if r["contradiction"]), None)
+            if idx is None:
+                never += 1
+            else:
+                firsts.append(idx)
+        if firsts:
+            srt = sorted(firsts)
+            med = srt[len(srt) // 2]
+            print(f"{label:<28} {med:>8} {sum(firsts) / len(firsts):>8.1f} {never:>28}")
+        else:
+            print(f"{label:<28} {'-':>8} {'-':>8} {never:>28}")
+
+
 if __name__ == "__main__":
     what = sys.argv[1] if len(sys.argv) > 1 else "all"
     if what in ("verify", "all"):
@@ -279,3 +422,5 @@ if __name__ == "__main__":
         sweep_observer()
     if what in ("harden", "all"):
         harden()
+    if what in ("deception", "all"):
+        deception()

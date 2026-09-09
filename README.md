@@ -16,6 +16,7 @@ python3 kuhn_intent.py  --hands 2000 --condition all --seed 1               # Ku
 python3 kuhn_intent.py  --hands 2000 --condition all --seed 1 --subject both  # + adversarial subject
 python3 leduc_intent.py --hands 2000 --condition all --seed 1 --subject both  # Leduc hold'em
 python3 sweep.py verify                                                       # gate: Kuhn greedy == lookahead
+python3 sweep.py deception                                                    # deception-aware observer
 python3 sweep.py all                                                          # gate + cost sweeps, seeds 1-3
 ```
 
@@ -84,6 +85,13 @@ observer's rule but not its card. In Leduc `--adversary impersonate` must stay
 consistent with some intent; `--adversary refute` may play like no intent at
 all.
 
+**Deception-aware observer.** `--deception-aware K` (Leduc). An empty
+hypothesis set is *proof* that the subject is faithful to no intent — the
+premise every conclusion rests on. After `K` such proofs the observer reports
+"contradicted" rather than a single intent, and once refuted mid-hand it plays
+for chips instead of drifting on. Removes 4–5 wrong confident claims per
+correct one given up, and changes nothing at all against a faithful subject.
+
 **Costs.** Both sides can be made chip-aware with a weighted objective:
 `--lam` (adversary: concealment − λ·chips lost) and `--mu` (observer:
 |H| − μ·chips). `lam=mu=0` is the pure information game; large values are
@@ -106,6 +114,7 @@ generalisation of the Kuhn one.
 | `chips/hand` | observer's mean profit — the cost side of the information trade |
 | `misID` | set collapsed to exactly one intent, the wrong one |
 | `contra` | every hypothesis eliminated: the play matched no intent (Leduc) |
+| `abstain` | observer reported "contradicted" rather than a single intent |
 | `deviate` | fraction of subject decisions off the declared policy |
 
 `|H| final` is the project's working proxy for **worst-case distinctiveness**,
@@ -146,6 +155,7 @@ checking reveals only the card.
 - [x] Adversarial condition — subject instructed to defeat the observer
 - [x] Leduc hold'em (larger tree, still enumerable)
 - [x] Cost-aware adversary and observer (λ / μ sweeps)
+- [x] Deception-aware observer — abstain once the model has been refuted
 - [ ] Human pilot — soundness rate for real subjects
 - [ ] LLM as *proposer only* — suggests hypotheses, symbolic layer validates;
       measure the rejection rate
