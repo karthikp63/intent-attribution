@@ -222,38 +222,39 @@ checking reveals only the card.
 - [ ] LLM proposer: an actual measured rejection rate (needs an API key)
 - [ ] Concordia wrapper: custom Game Master delegating resolution to this code
 
-## Gridworld — the second environment
+## Gridworld — second environment
 
 `python3 gridworld.py --map`. 8x8 grid, a wall with three gates, three
 destinations, four routing rules; an intent is a (destination, routing rule)
 pair. A probe is legible in one sentence: **close a corridor and see which way
-they turn.**
+they turn.** n = 48 per cell, **enumerated exhaustively**.
 
-It exists for two reasons. First, two environments sharing one mechanism is a
-much stronger claim than one — and the misattribution result **replicates**
-(adaptive online probing: 100% misID, random safest), so it is a property of
-exact elimination, not of poker. Second, it closes an honesty gap: we cite GRD
-but had only ever done online inquiry in a fixed environment. The grid does both
-and reports them separately.
+**Map rebuilt 2026-09-14 as a genuine GRD instance.** GRD requires design to
+*preserve the optimal cost* to every goal, not merely keep them reachable. On the
+old map every closure lengthened some route, so a faithful designer could do
+nothing — and the separation reported on 2026-09-09 was measured against a
+baseline with its hands tied. **That result is withdrawn.** The new map has
+redundant equal-length routes; 6 of 8 configurations are now legal.
 
-| mode | observer | exact ID | \|H\| final | cost/ep |
-|---|---|---|---|---|
-| online probing | passive | 31.2% | 2.42 | 0.000 |
-| online probing | adaptive | **95.8%** | 1.04 | −6.85 |
-| environment design (GRD) | adaptive | 39.6% | 2.12 | −4.00 |
+| mode | observer | exact ID | \|H\| final |
+|---|---|---|---|
+| online probing | passive | 37.5% | 2.00 |
+| online probing | adaptive | **100.0%** | 1.00 |
+| environment design (GRD) | adaptive | 87.5% | 1.12 |
 
-n = 48 per cell, **enumerated exhaustively** rather than sampled.
+**No formal separation survives.** Brute-forced over all 18 legal configurations:
+best single layout 87.5%, per-start oracle 95.8%, pooled bound 100% — and online
+adaptive reaches 100%, *equalling* the bound rather than exceeding it.
+`gridworld.py --witness` searches for a witness pair and finds none. What remains
+is a 12.5-point heuristic gap between reacting and committing in advance.
 
-**Online probing beats every fixed layout, machine-checked.** Brute-forcing all
-21 legal configurations: best single layout 47.9%, a per-start *oracle* designer
-60.4%, pooled-trace bound 70.8% — all upper bounds on **fixed layouts only**.
-Adaptive online reaches 95.8% by reconfiguring *mid-episode*. All four numbers
-are pinned in `sweep.py verify`. Witness: `gridworld.py --witness`.
+**wcd vs our metric.** GRD optimises wcd over goals; we optimise exact ID over
+intents. On this map wcd is constant at 13 across every design while exact ID
+swings 15/48 → 42/48 — a lever worthless for goal recognition is decisive for
+intent recognition.
 
-**Caveat on the GRD claim.** Our "may not shut the last gate" rule is a
-*relaxation* of GRD, which requires the optimal cost to every goal to be
-**unchanged**. Under the real constraint this grid admits no redesign at all, so
-we implement a relaxation, not GRD. See RESULTS.md.
+The misattribution result is unaffected: adaptive is misattributed on 100% of
+episodes in both modes, random safest.
 
 ## Soft elimination
 

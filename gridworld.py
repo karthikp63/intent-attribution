@@ -42,27 +42,33 @@ import core
 # ------------------------------------------------------------------ the map
 #
 #      0 1 2 3 4 5 6 7
-#   0  . . . # . . . .
-#   1  S . . G . . # .      G = gate (observer may open/close)
-#   2  . . . # . . # .      # = wall
-#   3  S # . # . . . .      S = possible subject start
-#   4  . . . G . # . A      A/B/C = candidate destinations
-#   5  S . . # . # . .
-#   6  . . . G . . . B
-#   7  S . . # . . # C
+#   0  S . . # . . # .
+#   1  S . . # . # . .
+#   2  S . # # . . . .
+#   3  S . . G . . # .      G = gate (may be opened/closed)
+#   4  . . . G . . . .      # = wall
+#   5  . . # G . # . C      S = possible subject start
+#   6  . # . # . . . B      A/B/C = candidate destinations
+#   7  . . . # . . . A
 #
-# The wall down column 3 is the point: every route from the left half to any
-# destination must pass one of three gates, so closing one is a real question
-# and the answer is a turn.
+# REBUILT 2026-09-14 to be a genuine GRD instance. The previous map had a wall
+# whose every gate closure lengthened some route, so under the real GRD
+# constraint (below) NO redesign was legal and the design arm was dead. This map
+# has REDUNDANT EQUAL-LENGTH ROUTES by construction: every gate row (3, 4, 5)
+# lies between every start row (0-3) and every destination row (5-7), so the
+# vertical distance through any gate is identical and closing one removes
+# optimal paths WITHOUT increasing the optimal cost to any destination. That is
+# exactly the move GRD is built around -- "the wcd may change only if we remove
+# paths from the set of optimal paths".
 
 R = C = 8
 WALLS = frozenset([
-    (0, 3), (2, 3), (3, 3), (5, 3), (7, 3),          # column-3 wall
-    (1, 6), (2, 6), (4, 5), (5, 5), (7, 6), (3, 1),  # interior clutter
+    (0, 3), (1, 3), (2, 3), (6, 3), (7, 3),          # column-3 wall
+    (0, 6), (1, 5), (2, 2), (3, 6), (5, 5), (6, 1),  # interior clutter
 ])
-GATES = ((1, 3), (4, 3), (6, 3))                     # indices 0, 1, 2
-STARTS = ((1, 0), (3, 0), (5, 0), (7, 0))
-DESTS = {"A": (4, 7), "B": (6, 7), "C": (7, 7)}
+GATES = ((3, 3), (4, 3), (5, 3))                     # indices 0, 1, 2
+STARTS = ((0, 0), (1, 0), (2, 0), (3, 0))
+DESTS = {"A": (7, 7), "B": (6, 7), "C": (5, 7)}
 VANTAGES = ((0, 5), (4, 4), (7, 4))                  # where the observer may stand
 
 MOVES = {"N": (-1, 0), "S": (1, 0), "E": (0, 1), "W": (0, -1)}
@@ -184,16 +190,37 @@ ALL_OPEN = 0
 ALL_CLOSED = (1 << len(GATES)) - 1
 
 
-def legal_close(closed):
-    """Gate configurations the observer is allowed to produce.
+def _optimal_costs(closed):
+    return {(s, k): dist_field(d, closed).get(s)
+            for s in STARTS for k, d in DESTS.items()}
 
-    THE CONSTRAINT IS GRD'S OWN. Goal recognition design minimises worst-case
-    distinctiveness *subject to not preventing agents from achieving their
-    goals*. Here that is literally "you may not shut the last open gate" --
-    every destination must stay reachable from every start. Without it the
-    observer would trivially "identify" intent by making the task impossible.
+
+_BASE_COSTS = None
+
+
+def legal_close(closed):
+    """THE REAL GRD CONSTRAINT -- cost preservation, not reachability.
+
+    Keren, Gal & Karpas (ICAPS 2014) pose the design problem as
+
+        minimize_{A-} ( wcd(D_{A\\A-}), |A-| )
+        subject to  for every goal G:  C*_D(G) = C*_{D\\A-}(G)
+
+    -- "we require the solution to preserve the original optimal solution
+    length of all goals". A removal that merely LENGTHENS a route is illegal,
+    not just expensive. We previously enforced the much weaker "do not shut the
+    last gate", which on the old map admitted closures GRD forbids outright and
+    left the design arm with nothing legal to do at all.
     """
-    return closed != ALL_CLOSED
+    global _BASE_COSTS
+    if _BASE_COSTS is None:
+        _BASE_COSTS = _optimal_costs(ALL_OPEN)
+    cur = _optimal_costs(closed)
+    return all(cur[k] is not None and cur[k] == v for k, v in _BASE_COSTS.items())
+
+
+def grd_legal_designs():
+    return [c for c in range(1 << len(GATES)) if legal_close(c)]
 
 
 def apply_action(a, closed, vantage):
@@ -273,44 +300,87 @@ def choose_action(H, pos, closed, vantage, t, condition, rng, mu=0.0):
 # ------------------------------------------------- environment design (GRD)
 
 @lru_cache(maxsize=None)
-def design_value(closed, mu):
-    """Expected final |intent set| if the layout is fixed to `closed` before the
-    episode starts and the observer then does nothing -- averaged over starts
-    and over intents under a uniform prior. This is the GRD objective."""
-    tot = 0.0
-    for start in STARTS:
-        H = INTENTS
-        tot += _passive_run_value(tuple(H), start, closed)
-    return tot / len(STARTS) + mu * sum(COST[f"close{i}"]
-                                        for i in range(len(GATES)) if (closed >> i) & 1)
+def design_exact(closed, vantage):
+    """How many enumerated episodes a FIXED layout+vantage pins exactly.
 
-
-@lru_cache(maxsize=None)
-def _passive_run_value(H, pos, closed):
-    """Expected surviving |H| with a silent observer on a fixed layout."""
-    if len(H) <= 1:
-        return float(len(H))
-    buckets = {}
-    for i in H:
-        buckets.setdefault(policy(i, pos, closed, 1), []).append(i)
-    val = 0.0
-    for m, Hb in buckets.items():
-        w = len(Hb) / len(H)
-        val += w * (len(Hb) if m == "stop"
-                    else _passive_run_value(tuple(Hb), step(pos, m), closed))
-    return val
+    This is the objective the three-tier bound uses, so the design arm is now
+    scored on the same thing it is compared against. It previously minimised
+    expected |H| and held the vantage at 1, which cost it real performance on
+    the metric being reported -- an underpowered baseline of our own making."""
+    return sum(1 for s in STARTS for i in INTENTS
+               if list(_passive_episode(s, i, closed, vantage)) == [i])
 
 
 def choose_design(condition, rng, mu=0.0):
-    configs = [c for c in range(1 << len(GATES)) if legal_close(c)]
+    """-> (closed, vantage). GRD is a one-time offline modification."""
+    configs = [(c, v) for c in grd_legal_designs() for v in range(len(VANTAGES))]
     if condition == "passive":
-        return ALL_OPEN                    # leave the world alone
+        return ALL_OPEN, 1                 # leave the world alone
     if condition == "random":
         return rng.choice(configs)
-    return min(configs, key=lambda c: (design_value(c, mu), bin(c).count("1"), c))
+
+    def cost_of(c):
+        return sum(COST[f"close{i}"] for i in range(len(GATES)) if (c >> i) & 1)
+    return max(configs, key=lambda cv: (design_exact(*cv) - mu * cost_of(cv[0]),
+                                        -cost_of(cv[0]), -cv[0], -cv[1]))
 
 
-# ------------------------------------------------------------- one episode
+# ------------------------------------------------------------------- wcd
+#
+# GRD's own metric, so we can speak the literature's language directly.
+# wcd = "the maximal length of a prefix of an optimal path an agent may take
+# before it becomes clear at which goal it is aiming" (Keren, Gal & Karpas).
+#
+# NOTE THE MISMATCH, which matters when comparing to the paper: wcd is defined
+# over GOALS -- here the three destinations -- while our exact-ID metric is over
+# INTENTS, the twelve (destination, routing rule) pairs. wcd ignores how the
+# agent routes; we are trying to recover that too. Related, not the same
+# quantity, and a design minimising one need not minimise the other.
+
+def wcd(closed):
+    """Longest non-distinctive optimal-path prefix, over all starts.
+
+    A cell c lies on an optimal path from s to destination d exactly when
+    dist(s,c) + dist(c,d) == dist(s,d). A prefix of length dist(s,c) is
+    non-distinctive iff c sits on an optimal path to two or more destinations.
+    Agents are assumed to act optimally, as in the paper -- and every routing
+    rule here does take a shortest path, so the assumption holds.
+    """
+    worst = 0
+    for s in STARTS:
+        ds = dist_field(s, closed)
+        fields = {k: dist_field(d, closed) for k, d in DESTS.items()}
+        total = {k: fields[k].get(s) for k in DESTS}
+        for c in ds:
+            serves = sum(1 for k in DESTS
+                         if total[k] is not None and fields[k].get(c) is not None
+                         and ds[c] + fields[k][c] == total[k])
+            if serves >= 2:
+                worst = max(worst, ds[c])
+    return worst
+
+
+# ------------------------------------------------- the consistent misattributor
+#
+# The poker result that mattered most was that a subject who stays strictly
+# inside the model -- declares one intent, faithfully plays ANOTHER -- drives
+# the observer to a confident wrong answer, and that probing harder makes it
+# worse. If that is a property of the mechanism rather than of poker, it must
+# reappear here. Same construction: play the most pinnable intent that is not
+# the declared one. The environment is deterministic, so "most pinnable" is a
+# simulation, not an estimate.
+
+def misattributing_intent(start, declared, condition, mode, mu=0.0):
+    best = None
+    for j in INTENTS:
+        if j == declared:
+            continue
+        r = run_episode(condition, start, declared, random.Random(0), mode, mu, play_as=j)
+        score = (1 if r["misattributed"] else 0, -r["final_size"])
+        if best is None or score > best[0]:
+            best = (score, j)
+    return best[1]
+
 
 def run_episode(condition, start, declared, rng, mode="online", mu=0.0, play_as=None):
     played = play_as or declared
@@ -319,7 +389,7 @@ def run_episode(condition, start, declared, rng, mode="online", mu=0.0, play_as=
     design = None
 
     if mode == "design":
-        design = choose_design(condition, rng, mu)
+        design, vantage = choose_design(condition, rng, mu)
         cost += sum(COST[f"close{i}"] for i in range(len(GATES)) if (design >> i) & 1)
         closed = design
 
@@ -406,40 +476,6 @@ def all_episodes(condition, mode, rng, mu=0.0, play_as_fn=None):
 KEYS = ["exact", "H", "sound", "misID", "forced", "cost"]
 
 
-def grd_legal_designs():
-    """Configurations a FAITHFUL GRD designer may produce.
-
-    Keren, Gal & Karpas (ICAPS 2014) do not merely require goals to stay
-    reachable. Their design problem is
-
-        minimize_{A-} (wcd(D_{A\\A-}), |A-|)
-        subject to  for every goal G:  C*_D(G) = C*_{D\\A-}(G)
-
-    -- "as a way of maintaining 'user comfort' in the model we require the
-    solution to preserve the original optimal solution length of all goals."
-    So a removal that merely lengthens a route is ILLEGAL, not just costly.
-
-    Our `legal_close` ("do not shut the last gate") is a strictly weaker
-    relaxation of that. This function reports what the real constraint allows.
-    """
-    base = {(s, k): dist_field(d, ALL_OPEN)[s]
-            for s in STARTS for k, d in DESTS.items()}
-    out = []
-    for c in range(1 << len(GATES)):
-        ok = True
-        for s in STARTS:
-            for k, d in DESTS.items():
-                f = dist_field(d, c)
-                if s not in f or f[s] != base[(s, k)]:
-                    ok = False
-                    break
-            if not ok:
-                break
-        if ok:
-            out.append(c)
-    return out
-
-
 def _passive_episode(start, intent, closed, vantage):
     """One episode on a layout fixed before it starts, observer silent."""
     H = tuple(INTENTS)
@@ -492,28 +528,41 @@ def static_bound():
 
 
 def witness():
-    """The concrete pair behind the separation, regenerated from scratch.
+    """Search for a separation witness: an intent pair identical under EVERY
+    legal fixed configuration but separated by an observer that reconfigures
+    mid-episode. Reports honestly when none exists.
 
         python3 gridworld.py --witness
     """
-    s, i1, i2 = (3, 0), ("A", "direct"), ("A", "open_field")
-    print(f"\n  WITNESS: start {s}, {name(i1)} vs {name(i2)}\n")
-    same = True
-    for c in range(1 << len(GATES)):
-        if not legal_close(c):
-            continue
-        for v in range(len(VANTAGES)):
-            t1 = _trace(i1, s, c, v)
-            t2 = _trace(i2, s, c, v)
-            if t1 != t2:
-                same = False
-                print(f"    differ under fixed layout {bin(c)} vantage {v}")
-    print(f"    identical under ALL {len([c for c in range(1 << len(GATES)) if legal_close(c)]) * len(VANTAGES)}"
-          f" fixed configurations: {same}")
+    configs = [(c, v) for c in grd_legal_designs() for v in range(len(VANTAGES))]
+    print(f"\n  searching {len(STARTS)} starts x {len(INTENTS)} intents against "
+          f"{len(configs)} legal fixed configurations\n")
+    found = []
+    for s in STARTS:
+        sig = {}
+        for i in INTENTS:
+            tr = tuple(t for c, v in configs for t in _trace(i, s, c, v))
+            sig.setdefault(tr, []).append(i)
+        for group in sig.values():
+            if len(group) > 1:
+                found.append((s, group))
 
-    print("\n  Now with an observer that reconfigures mid-episode:\n")
-    print(f"    {'t':>2}  {'observer':<9} {'gates':>6} {'pos':<8} "
-          f"{name(i1):<14} {name(i2):<14}")
+    if not found:
+        print("  NO WITNESS EXISTS on this map.")
+        print("  Every intent is separated by SOME fixed configuration, so there is")
+        print("  nothing online reconfiguration can distinguish that design cannot.")
+        print("  The formal separation claimed on the previous map does not hold here.")
+        print("  (On the old map -- which admitted no GRD-legal design at all -- the")
+        print("   pair was start (3,0), A/direct vs A/open_field.)")
+        return
+
+    for s, group in found:
+        print(f"  start {s}: {[name(i) for i in group]} identical under all "
+              f"{len(configs)} fixed configurations")
+    s, group = found[0]
+    i1, i2 = group[0], group[1]
+    print(f"\n  Against an observer that reconfigures mid-episode "
+          f"({name(i1)} vs {name(i2)}):\n")
     closed, v, t, pos = ALL_OPEN, 1, 0, s
     H = tuple(INTENTS)
     while t < STEP_CAP:

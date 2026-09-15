@@ -750,193 +750,165 @@ Tasks 1–2 and `sweep.py verify` run with zero dependencies and no key;
 `proposer.py` is never imported by the experiment path and uses only stdlib
 `urllib`.
 
-## Gridworld — the second environment, and the first real GRD claim
+## Gridworld — second environment, and an honest GRD comparison
 
-`python3 gridworld.py --map` &middot; `python3 sweep.py grid`
+`python3 gridworld.py --map` &middot; `--bounds` &middot; `--witness` &middot; `python3 sweep.py grid`
 
-Poker made "what is a probe?" hard to picture. In a grid it is one sentence:
-**close a corridor and see which way they turn.** It is also the setting the
-goal-recognition-design literature actually uses, which makes this a comparison
-rather than an analogy.
-
-8x8 grid, a wall down column 3 with three gates, four possible starts, three
-destinations, four routing rules. An intent is a **(destination, routing rule)**
-pair — 12 of them. Two intents sharing a destination but routing differently are
-the interesting case, exactly as `trap` and `value_bet` are in poker. Observer
-actions: open or close a gate, or move to a vantage point, each with a cost.
-
-Episodes are **enumerated, not sampled**: every start x every intent = **48 per
-cell**, exhaustively. The environment is deterministic, so only the `random`
-observer varies with the seed; `passive` and `adaptive` have degenerate ranges by
-construction, and 48 is the whole population rather than a sample.
-
-### The honesty gap this closes
-
-We have been citing GRD while doing something weaker. GRD **redesigns the
-environment in advance** so that whichever goal the agent holds becomes evident
-sooner. Everything before this was **online inquiry inside a fixed environment**.
-The grid does both, and they are reported separately and never averaged:
-
-* `--mode online` — the observer acts during the episode.
-* `--mode design` — the observer fixes the layout before the subject starts, then
-  does nothing. This is GRD proper.
-
-> **Correction: our GRD constraint is a RELAXATION, not the real one.** We
-> enforced "you may not shut the last open gate" as a stand-in for GRD's
-> feasibility requirement. Checked against Keren, Gal & Karpas (ICAPS 2014),
-> that is **not** what they require. Their design problem is
+> ### Map rebuilt 2026-09-14 — every gridworld number below is new
+>
+> **Why.** The first map was checked against Keren, Gal & Karpas (ICAPS 2014) and
+> failed. GRD's design constraint is **cost preservation**, not reachability:
 >
 > > minimize<sub>A₋</sub> ( wcd(D<sub>A∖A₋</sub>), |A₋| ) subject to ∀G ∈ 𝒢,
 > > C\*<sub>D</sub>(G) = C\*<sub>D∖A₋</sub>(G)
+> >
+> > — "we require the solution to preserve the original optimal solution length
+> > of all goals"
 >
-> — "as a way of maintaining *user comfort* in the model we require the solution
-> to preserve the original optimal solution length of all goals." A removal that
-> merely *lengthens* a route is **illegal**, not merely costly.
+> On the old map **every** closure lengthened some route, so a faithful GRD
+> designer could remove nothing at all and the design arm was dead on arrival.
+> The 95.8% vs 39.6% "separation" reported on 2026-09-09 was measured against a
+> baseline with its hands tied. **That result is withdrawn.**
 >
-> In our grid **every** closure lengthens some route (by 2 to 10 steps), so a
-> faithful GRD designer may remove **nothing at all**: the only cost-preserving
-> configuration is the empty one. `gridworld.py --bounds` reports this and the
-> gate prints it on every run. Two consequences, pointing opposite ways:
+> **What changed.** The new map has redundant equal-length routes by
+> construction: every gate row (3, 4, 5) lies between every start row (0–3) and
+> every destination row (5–7), so vertical distance through *any* gate is
+> identical. Closing one removes optimal paths **without** increasing the optimal
+> cost to any destination — exactly the move GRD is built around. `legal_close`
+> now implements cost preservation directly and is asserted in the gate.
 >
-> * **The separation is not an artifact of a crippled baseline.** Our design arm
->   is *more* permissive than GRD, not less — it is allowed closures GRD forbids
->   outright. Beating it is therefore a conservative result.
-> * **But we cannot claim to implement GRD.** Under the real constraint this grid
->   is degenerate for design: nothing may be removed, so wcd is unchanged. A
->   genuine GRD instance needs **redundant equal-length routes**, so that some
->   closures preserve optimal cost. That is a map change and would move every
->   committed gridworld number, so it is not done here.
->
-> A second mismatch worth stating: GRD's objective is **wcd** — how many steps
-> before the *goal* is revealed, over destinations. Ours is exact identification
-> of a (destination, routing rule) intent. Related, not the same quantity.
+> **Legal design space: 6 of 8 configurations** (all but {g0,g1} and all-closed),
+> against **1 of 8** — the empty one — on the old map.
 
-### Faithful subject (n = 48, exhaustive)
+8x8 grid, a wall down column 3 with three gates, four starts, three
+destinations, four routing rules. An intent is a **(destination, routing rule)**
+pair — 12 of them. Episodes are **enumerated, not sampled**: every start x every
+intent = **48 per cell**, exhaustively. Only the `random` observer varies with
+the seed.
+
+### The headline: the separation does not survive
+
+**There is no formal separation on a genuine GRD instance.** Stated plainly
+because the opposite was claimed here five days ago.
+
+Machine-checked over all **18** legal configurations (6 layouts x 3 vantages) x
+48 episodes, `python3 gridworld.py --bounds`:
 
 ```
-mode                observer   exact ID   |H| final   sound   misID   forced/ep   cost/ep
-online probing      passive       31.2%       2.42     100%    0.0%        0.00    +0.000
-online probing      random        38.2%       2.32     100%    0.0%        1.36   -13.500
-online probing      adaptive      95.8%       1.04     100%    0.0%        6.00    -6.854
-
-environment design  passive       31.2%       2.42     100%    0.0%        0.00    +0.000
-environment design  random        28.5%       2.65     100%    0.0%        0.97    -2.569
-environment design  adaptive      39.6%       2.12     100%    0.0%        0.79    -4.000
-```
-`random` ranges over seeds 1–3: online 33.3–41.7%, design 25.0–35.4%.
-
-### The separation, machine-checked
-
-**Adaptive online probing reaches 95.8% (46/48).**
-
-> **Scope of the bound, stated where the number is.** Every bound below is an
-> upper bound on **fixed layouts only** — a configuration chosen before the
-> episode and held for its duration. **None of them bounds an observer that
-> reconfigures mid-episode**, and the 95.8% is not a counterexample to any of
-> them. The separation claim is exactly: *fixed-layout design cannot exceed
-> these; online inquiry does.*
-
-Brute-forced rather than argued — all **21** legal configurations (7 layouts x 3
-vantages) x 48 episodes, `python3 gridworld.py --bounds`:
-
-```
-best SINGLE fixed configuration   23/48 = 47.9%   <- what a designer actually picks
-best per-start ORACLE designer    29/48 = 60.4%   <- told the start before choosing
-pooled-trace upper bound          34/48 = 70.8%   <- agree-everywhere argument
+best SINGLE fixed configuration   42/48 = 87.5%   <- what a designer actually picks
+best per-start ORACLE designer    46/48 = 95.8%   <- told the start before choosing
+pooled-trace upper bound          48/48 = 100.0%  <- agree-everywhere argument
 --------------------------------------------------
-online adaptive                   46/48 = 95.8%
+online adaptive                   48/48 = 100.0%
 ```
 
-The three bounds are nested (23 ≤ 29 ≤ 34) and all four numbers are **pinned in
-`sweep.py verify`**, which fails on any drift, so the claim in this file cannot
-come apart from the code.
+Online adaptive **equals** the pooled bound rather than exceeding it. All four
+numbers are pinned in `sweep.py verify`; the gate asserts `online <= pooled` and
+deliberately **does not** assert a strict inequality any more, because that would
+pin a claim the data does not support.
 
-The middle row is deliberately adversarial: the per-start oracle is *more*
-powerful than any real designer, since it is told the subject's start before
-choosing a layout. It still reaches only 60.4%.
-
-**Our own design arm is weaker than the best fixed layout, and we are not
-updating it.** `choose_design` minimises expected |H| and holds the vantage
-fixed, so it scores **39.6%** where the best fixed configuration scores 47.9%.
-That gap is a property of our design *heuristic*, not of design as such, which is
-why the bound above — not the 39.6% — is what the separation rests on. Changing
-`choose_design` would move a committed number, so it is flagged here rather than
-silently fixed.
-
-### The witness
-
-`python3 gridworld.py --witness` regenerates this from scratch.
-
-Start `(3,0)`, `A/direct` vs `A/open_field`. **Identical under all 21 fixed
-configurations** — the command verifies this exhaustively. Then, against an
-observer that reconfigures:
+`python3 gridworld.py --witness` now searches for a witness pair and reports:
 
 ```
- t  observer   gates  pos      A/direct   A/open_field
- 0  close2       100  (3, 0)   S          S
- 1  close1       110  (4, 0)   N          N
- ...
-14  wait         110  (3, 2)   N          N
-15  open1        100  (2, 2)   N          S      <-- SEPARATED
+NO WITNESS EXISTS on this map.
+Every intent is separated by SOME fixed configuration.
 ```
 
-Reopening gate 1 changes how open the neighbouring cells are, and the two rules
-score openness oppositely. No static layout produces that moment; a sequence
-does. One concrete pair is the whole claim: there exist intents that online
-inquiry separates and that no fixed layout can.
+Zero pairs are indistinguishable under all 18 legal fixed configurations. On the
+old map the witness was start (3,0), `A/direct` vs `A/open_field`; on a map where
+design is actually allowed to act, no such pair remains.
 
-Adaptive also costs *less* than random (−6.85 vs −13.50) while identifying far
-better: the cost is in choosing which gate to close, not in closing many.
+### What survives: a heuristic gap, not a formal one
 
-### The poker result replicates — it was not a poker artifact
-
-Same construction as the consistent misattributor: the subject declares one
-intent and faithfully plays **another**, chosen to be the most pinnable. It never
-leaves the model.
+Faithful subject, n = 48 per cell, enumerated:
 
 ```
-mode                observer   exact ID   |H| final   sound    misID   forced/ep
-online probing      passive        0.0%       1.04     0.0%    97.9%        0.00
-online probing      random         0.0%       2.34    13.2%    54.9%        1.69
-online probing      adaptive       0.0%       1.00     0.0%   100.0%        6.81
+mode                observer   exact ID   |H| final   forced/ep   cost/ep
+online probing      passive       37.5%       2.00        0.00     +0.000
+online probing      random        54.2%       1.86        1.23    -12.965
+online probing      adaptive     100.0%       1.00        1.12     -1.875
 
-environment design  passive        0.0%       1.04     0.0%    97.9%        0.00
-environment design  random         0.0%       2.59    18.1%    34.7%        0.90
-environment design  adaptive       0.0%       1.04     0.0%    97.9%        1.69
+environment design  passive       37.5%       2.00        0.00     +0.000
+environment design  random        46.5%       1.94        1.14     -2.472
+environment design  adaptive      87.5%       1.12        2.15     -2.000
 ```
 
-**Adaptive online probing is misattributed on 100% of episodes** — 48 of 48, every
-one ending on exactly one intent, always the wrong one. The ordering from poker
-holds exactly: adaptive worst, passive next, **random safest** (54.9%) purely
-because it learns least. Competence is the vulnerability, in a second environment
-with a different action space, different intent structure, and no hidden
-information at all.
+Online adaptive beats design adaptive **100% to 87.5%** — a 12.5-point gap. But
+87.5% is *exactly* the best-single-fixed-configuration bound, so the design arm
+is now provably optimal for its class and the gap is the honest price of
+committing before you see anything, not an artifact.
 
-That is the point of having two environments. The misattribution result is a
-property of **exact elimination over intents-as-policies**, not of poker.
+**The design arm was also fixed.** It previously minimised expected |H| and held
+the vantage at 1, scoring 39.6% where the best fixed layout scored 47.9% on the
+old map. `choose_design` now maximises the same exact-ID objective the bound uses
+and selects the vantage, so it lands on its own bound exactly. Comparing an
+observer to a baseline scored on a different objective was our error, not a
+property of design.
+
+### wcd — speaking the literature's language, and where it diverges from ours
+
+GRD's metric is **wcd**: the longest prefix of an optimal path before the agent's
+*goal* becomes clear. Computed over all legal designs (`gridworld.py --bounds`):
+
+```
+wcd over every legal design:   [13]
+```
+
+**Gate choice does not move wcd at all on this map** — and neither do the two
+*illegal* configurations, so this is not the constraint biting. All three
+destinations sit in the right-hand column, so optimal paths to them diverge late
+regardless of which gate is open.
+
+Yet over the same designs, exact identification of **intents** swings from
+**15/48 to 42/48**. That is the mismatch, concretely:
+
+| | GRD's wcd | our exact ID |
+|---|---|---|
+| what it recognises | the **goal** (3 destinations) | the **intent** (12 destination x routing-rule pairs) |
+| across legal designs | constant at 13 | 15/48 → 42/48 |
+
+A design lever that is worthless for goal recognition is decisive for intent
+recognition. The two are related but not the same quantity, and a design
+minimising one need not minimise the other. Anyone reading our numbers as GRD
+results should read this table first.
+
+### The poker result still replicates
+
+Subject declares one intent and faithfully plays another, chosen to be most
+pinnable — it never leaves the model.
+
+```
+mode                observer   exact ID   |H| final   sound    misID
+online probing      passive        0.0%       1.00     0.0%   100.0%
+online probing      random         0.0%       1.49     4.9%    71.5%
+online probing      adaptive       0.0%       1.00     0.0%   100.0%
+
+environment design  passive        0.0%       1.00     0.0%   100.0%
+environment design  random         0.0%       2.10    11.8%    29.2%
+environment design  adaptive       0.0%       1.00     0.0%   100.0%
+```
+
+Adaptive is misattributed on **100%** of episodes in *both* modes, and random is
+again the safest observer because it learns least. The misattribution finding is
+untouched by the map rebuild — it is a property of exact elimination over
+intents-as-policies, not of any particular environment.
+
+### Environment self-checks (in the gate)
+
+```
+reachability   every destination from every start, every legal layout: 72/72
+termination    longest episode 14 steps (cap 30); failed to arrive: 0
+distinctness   12/12 intents behave distinctly
+GRD constraint cost-preserving designs: 6 of 8
+```
 
 ### Shared code, and what could not be shared
 
 `core.py` holds the per-episode record schema, every metric computed from it,
 seed aggregation, Wilson intervals and table rendering — both environments import
-it. What is **not** shared is the elimination step and the selection rule: each is
-a few lines over an environment-specific `policy()` and action set, and the
-recursion that scores actions has to walk that environment's own tree.
-Abstracting them behind callbacks would have added more indirection than it
-removed and obscured the thing a reader needs to check — that the two
-environments really do apply the same rule. `sweep.py verify` holds them honest
-instead.
-
-### Environment self-checks (in the gate)
-
-`sweep.py verify` now fails if any of these fail, because no gridworld number
-means anything otherwise:
-
-```
-reachability   every destination from every start, every legal layout: 84/84
-termination    longest episode 19 steps (cap 30); failed to arrive: 0
-distinctness   12/12 intents behave distinctly
-```
+it. Not shared: the elimination step and the selection rule, each a few lines
+over an environment-specific `policy()` and action set whose recursion must walk
+that environment's own tree. `sweep.py verify` holds them honest instead.
 
 ## Soft elimination — the likelihood layer (blocking for human data)
 

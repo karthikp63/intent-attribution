@@ -207,7 +207,7 @@ def verify():
             print(f"    {k}: greedy={ma[k]!r}  lookahead={mb[k]!r}")
 
     ok = ((not bad_records) and (not bad_metrics) and kuhn_coverage()
-          and grid_selfcheck() and soft.verify(hands=120))
+          and grid_selfcheck() and soft.verify(hands=120) and document_check())
     print("\nRESULT: " + ("PASS -- identical hand for hand and metric for metric."
                           if ok else
                           "FAIL -- divergence found. STOP; one implementation is wrong."))
@@ -663,20 +663,65 @@ def grid_selfcheck():
     print(f"                   pooled-trace bound    {pl}/{n} = {pl / n:.1%}")
     print(f"                   online adaptive       {online}/{n} = {online / n:.1%}")
     # Pinned so the separation cannot silently drift if the map is edited.
-    EXPECT = (23, 29, 34, 46)
+    EXPECT = (42, 46, 48, 48)      # new map, 2026-09-14; see RESULTS.md
     got = (bs, bp, pl, online)
     if got != EXPECT:
         print(f"  BOUND DRIFT: expected {EXPECT}, got {got} -- the separation claim "
               f"in RESULTS.md no longer matches the code")
     ok &= got == EXPECT
     ok &= bs <= bp <= pl          # the three bounds must stay nested
-    ok &= online > pl             # the separation itself
+    # NOTE: no strict inequality is asserted any more. On the rebuilt map
+    # online == pooled bound == 48/48, i.e. there is NO formal separation.
+    # Asserting one would pin a claim the data does not support.
+    ok &= online <= pl            # online can never EXCEED the pooled bound
 
     grd = GW.grd_legal_designs()
-    print(f"  GRD constraint faithful GRD (cost-preserving) admits {len(grd)} design(s): "
-          f"{grd}  -- see RESULTS.md, our legal_close is a strict RELAXATION")
+    print(f"  GRD constraint cost-preserving designs: {len(grd)} of "
+          f"{1 << len(GW.GATES)} -> {grd}")
+    wcds = sorted({GW.wcd(c) for c in grd})
+    print(f"  wcd            over every legal design: {wcds}  "
+          f"(gate choice does not move GRD's own metric on this map)")
+    ok &= len(grd) > 1            # a real GRD instance has legal moves
 
     print("\n  " + ("PASS" if ok else "FAIL -- gridworld results are not trustworthy"))
+    return ok
+
+
+# ------------------------------------------------- guard the document itself
+#
+# The gate checks numbers, not prose -- which is how a splice edit silently
+# deleted 347 lines of RESULTS.md (the whole gridworld and soft-elimination
+# sections) without anything failing. This check is cheap and would have caught
+# it immediately.
+
+REQUIRED_SECTIONS = [
+    "## Kuhn (", "## Leduc (", "## Task 2: cost-aware misfit generator",
+    "## Task 3: cost-aware observer", "## Hardening the misattribution result",
+    "## Task 4c: a deception-aware observer", "## The consistent misattributor",
+    "## Gridworld", "## Soft elimination", "## LLM as proposer", "## Commands",
+]
+RESULTS_LINE_FLOOR = 950
+
+
+def document_check(path="RESULTS.md"):
+    print("\n### Document structure\n")
+    try:
+        text = open(path).read()
+    except OSError as e:
+        print(f"  FAIL cannot read {path}: {e}")
+        return False
+    lines = text.count("\n") + 1
+    missing = [h for h in REQUIRED_SECTIONS if h not in text]
+    print(f"  {path}: {lines} lines, {len(REQUIRED_SECTIONS) - len(missing)}"
+          f"/{len(REQUIRED_SECTIONS)} required sections present")
+    if missing:
+        print("  MISSING SECTIONS: " + "; ".join(missing))
+    if lines < RESULTS_LINE_FLOOR:
+        print(f"  LINE-COUNT FLOOR BREACHED: {lines} < {RESULTS_LINE_FLOOR}. If this "
+              f"shrinkage is intended, lower RESULTS_LINE_FLOOR in sweep.py in the "
+              f"same commit that removes the content.")
+    ok = not missing and lines >= RESULTS_LINE_FLOOR
+    print("  " + ("PASS" if ok else "FAIL"))
     return ok
 
 
