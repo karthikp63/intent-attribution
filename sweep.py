@@ -9,6 +9,7 @@ Sweeps and hardening for the cost-aware misfit generator / observer.
     python3 sweep.py deception     # task 4c: deception-aware observer, and what it costs
     python3 sweep.py misattribute  # the consistent misattributor: stays in-model, still wrong
     python3 sweep.py grid          # gridworld: online probing vs environment design (GRD)
+    python3 soft.py --sweep        # soft elimination: noisy subjects
     python3 sweep.py all
 
 Every cell: 2000 hands per seed, seeds 1-3; table shows the seed mean and,
@@ -21,6 +22,7 @@ import sys
 
 import core
 import gridworld as GW
+import soft
 import kuhn_intent as K
 import leduc_intent as L
 
@@ -204,7 +206,8 @@ def verify():
         for k in mdiff:
             print(f"    {k}: greedy={ma[k]!r}  lookahead={mb[k]!r}")
 
-    ok = (not bad_records) and (not bad_metrics) and kuhn_coverage() and grid_selfcheck()
+    ok = ((not bad_records) and (not bad_metrics) and kuhn_coverage()
+          and grid_selfcheck() and soft.verify(hands=120))
     print("\nRESULT: " + ("PASS -- identical hand for hand and metric for metric."
                           if ok else
                           "FAIL -- divergence found. STOP; one implementation is wrong."))

@@ -216,6 +216,7 @@ checking reveals only the card.
 - [x] Deception-aware observer — abstain once the model has been refuted
 - [x] Consistent misattributor — in-model attack that defeats the above
 - [x] Second environment (gridworld) + real GRD claim: online probing vs design
+- [x] Soft elimination (eps-noise likelihood layer) — gates the human pilot
 - [ ] Human pilot — soundness rate for real subjects
 - [x] LLM as *proposer only* — symbolic layer validates; rejection rate measured
       (12.5% constrained / 60% free-form / 75% repair)
@@ -248,6 +249,22 @@ fixed layout bounds exact ID at 34/48 = 70.8% — an upper bound on any environm
 design. Adaptive online reaches 95.8% by reconfiguring *mid-episode*, separating
 intent pairs that no static layout can. GRD's own constraint is enforced
 literally: you may not shut the last open gate.
+
+## Soft elimination
+
+`python3 soft.py --verify`. Hard elimination assumes the subject is inside the
+model; real people are not. A likelihood layer,
+`P(a|intent) = (1-eps)[policy says a] + eps/|legal|`, turns the hypothesis set
+into a posterior. Metrics are defined so that **eps = 0 reproduces every
+committed number exactly** — verified per episode over 9000 episodes, 0
+differences, inside `sweep.py verify`.
+
+Against a noisy subject, hard scoring keeps naming intents confidently while its
+soundness collapses (46.9% at eps = 0.5); matched scoring holds soundness at
+~97% and pays in honest uncertainty. Re-scoring the real 20-hand pilot, soundness
+rises 45% → 100%, but posterior mass on the declared intent stays at ≈ 0.24
+against a 0.20 prior — the metric was brittle, and the underlying signal is also
+weak.
 
 ## LLM as proposer
 

@@ -986,6 +986,117 @@ termination    longest episode 19 steps (cap 30); failed to arrive: 0
 distinctness   12/12 intents behave distinctly
 ```
 
+## Soft elimination — the likelihood layer (blocking for human data)
+
+`python3 soft.py --verify` &middot; `--sweep` &middot; `--pilot pilot.json`
+
+Exact elimination assumes the subject is inside the model. Real people are not:
+the 20-hand pilot scored soundness **9/20** with no deception involved. Under
+hard elimination one move off the declared policy either removes the true intent
+or empties the set, so human data scored that way measures the subject's
+sloppiness, not the observer's capability.
+
+    P(a | intent, card, node) = (1 - eps) * [policy says a] + eps / |legal(node)|
+
+The card is **profiled out (max), not marginalised (sum)** — hard elimination
+asks *"is there some card under which this intent explains what we saw"*, which
+is an existential. Summing instead weights an intent by how many cards happen to
+fit it; that broke the eps = 0 collapse on 1511 of 5400 episodes before the
+falsifier caught it. Card facts stay hard; only behaviour is noisy.
+
+### Metric definitions, chosen to collapse exactly at eps = 0
+
+At eps = 0 every consistent hypothesis has likelihood 1 and every inconsistent
+one 0, so the posterior is uniform over exactly the hard survivors.
+
+| metric | soft definition | at eps = 0 |
+|---|---|---|
+| `\|H\| eff` | perplexity, exp(entropy) of the intent posterior | uniform over k → **k** |
+| `exact ID` | MAP intent is declared **and** carries mass ≥ τ = 0.9 | mass 1/k ≥ 0.9 iff **k = 1** |
+| `misID` | MAP carries mass ≥ τ and is not declared | same argument |
+| `sound` | declared intent is in the 95% HPD set | HPD = full support → **survived** |
+| `contra` | hard support empty — *no intent explains this without invoking noise* | unchanged |
+
+`contra` deliberately keeps its hard definition at every eps: at eps > 0 nothing
+is strictly impossible, so a posterior version would be vacuous, and "refuted
+unless the subject slipped" is the quantity we actually want.
+
+**The falsifier passes.** Every metric recomputed through the likelihood layer at
+eps = 0, compared per episode against what the hard run recorded, across both
+games, all three conditions, every subject type, seeds 1–3:
+
+```
+episodes checked:                  9000
+episodes where ANY metric differs:    0
+```
+
+This now runs inside `sweep.py verify`.
+
+### What noise does (Leduc, adaptive, n = 3000 per cell)
+
+The subject really slips at rate `eps_true`; the observer scores at `eps_model`.
+
+```
+eps_true |      scored eps=0 (hard)        |   scored eps=eps_true (matched)
+         |  exact  |H|eff   sound  contra  |  exact  |H|eff   sound  contra
+    0.00 |  37.0%    2.66  100.0%    0.0%  |  37.0%    2.66  100.0%    0.0%
+    0.02 |  36.1%    2.62   97.5%    0.4%  |  36.2%    2.81   98.0%    0.4%
+    0.05 |  34.9%    2.57   93.6%    1.1%  |  20.1%    3.00   96.8%    1.1%
+    0.10 |  32.6%    2.50   87.8%    2.1%  |   0.7%    3.31   96.8%    2.1%
+    0.20 |  27.7%    2.32   75.2%    4.1%  |   0.0%    3.91   96.9%    4.1%
+    0.35 |  23.0%    2.09   60.2%    7.2% |   0.0%    4.82   97.1%    7.2%
+    0.50 |  18.1%    1.89   46.9%   10.0% |   0.0%    5.62   97.2%   10.0%
+```
+
+The `eps_true = 0` row reproduces itself in both columns, which is the sweep's
+own falsifier (the replay is verified identical to the original hand in 500/500).
+
+**Read the two columns against each other.** Hard scoring keeps *reporting*
+confident identifications as the subject gets noisier — 18.1% exact ID even at
+eps = 0.5 — while its soundness collapses to **46.9%**. It is confidently naming
+an intent in a fifth of hands while having discarded the true one in half of
+them. Matched scoring holds soundness at **~97% at every noise level** and pays
+for it in honest uncertainty: exact ID goes to zero and |H| eff rises to 5.62.
+
+That is the trade, and it is the right one for human data. Hard elimination does
+not become *uncertain* under noise, it becomes *wrong*.
+
+### Re-scoring the real pilot — 20 human hands
+
+```
+   eps    sound    exact   |H| eff   contra   mean mass on declared
+  0.00    45.0%     5.0%      1.75     0.0%                   0.242
+  0.05    70.0%     5.0%      2.16     0.0%                   0.241
+  0.10   100.0%     0.0%      2.49     0.0%                   0.240
+  0.20   100.0%     0.0%      3.08     0.0%                   0.237
+  0.50   100.0%     0.0%      4.31     0.0%                   0.224
+```
+
+**How much of the 9/20 was brittleness? Almost none of it.** Soundness climbs
+from 45% to 100% by eps = 0.1 — but look at the last column. The posterior mass
+on the intent the person actually declared sits at **≈ 0.24 at every eps**, and
+Kuhn's uniform prior over five intents is **0.20**. After a complete hand, the
+declared intent carries barely more weight than it started with.
+
+So softening fixes the *metric* — the observer stops claiming the truth was
+eliminated — without making the truth any better supported. The signal in this
+person's behaviour about their stated intent is close to absent. That is a much
+more serious finding for the human pilot than brittleness would have been, and
+it is the number to design the study around.
+
+**Caveats, because n is tiny.** 20 hands, one person, and **16 of 20
+declarations were `bluff`** — a badly unbalanced sample from a self-chosen menu.
+This is suggestive, not conclusive, and it is an argument for assigning intents
+rather than letting participants pick.
+
+### Scope limit
+
+The likelihood layer is a **scoring** layer. The observer's action selection
+still uses hard elimination, so `--mu` and the probe rule are unchanged and every
+committed number is untouched by construction. Posterior-driven *selection* —
+choosing probes to minimise expected posterior entropy rather than expected set
+size — is the natural next step and is not implemented.
+
 ## Commands
 
 ```

@@ -676,6 +676,7 @@ def play_hand(condition, rng, human=False, hand_no=0, subject="faithful", mu=0.0
         "subject_card": subject_card,
         "observer_card": observer_card,
         "board": board_of(hist),
+        "board_card": board,          # the card that WAS dealt, even if never revealed
         "declared": declared,
         "history": list(hist),
         "final_set": final,
