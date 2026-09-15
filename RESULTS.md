@@ -860,6 +860,132 @@ leaving n = 4. That is itself a small datum about hand-authored fixtures.
   larger n; then the repair loop is the deployment case — run it live whenever a
   contradiction fires, and measure coverage over many hands rather than 4.
 
+## Gridworld — the second environment, and the first real GRD claim
+
+`python3 gridworld.py --map` &middot; `python3 sweep.py grid`
+
+Poker made "what is a probe?" hard to picture. In a grid it is one sentence:
+**close a corridor and see which way they turn.** It is also the setting the
+goal-recognition-design literature actually uses, which makes this a comparison
+rather than an analogy.
+
+8x8 grid, a wall down column 3 with three gates, four possible starts, three
+destinations, four routing rules. An intent is a **(destination, routing rule)**
+pair — 12 of them. Two intents sharing a destination but routing differently are
+the interesting case, exactly as `trap` and `value_bet` are in poker. Observer
+actions: open or close a gate, or move to a vantage point, each with a cost.
+
+Episodes are **enumerated, not sampled**: every start x every intent = **48 per
+cell**, exhaustively. The environment is deterministic, so only the `random`
+observer varies with the seed; `passive` and `adaptive` have degenerate ranges by
+construction, and 48 is the whole population rather than a sample.
+
+### The honesty gap this closes
+
+We have been citing GRD while doing something weaker. GRD **redesigns the
+environment in advance** so that whichever goal the agent holds becomes evident
+sooner. Everything before this was **online inquiry inside a fixed environment**.
+The grid does both, and they are reported separately and never averaged:
+
+* `--mode online` — the observer acts during the episode.
+* `--mode design` — the observer fixes the layout before the subject starts, then
+  does nothing. This is GRD proper.
+
+The GRD constraint comes along with it, and here it is literal. GRD minimises
+worst-case distinctiveness *subject to not preventing agents from achieving their
+goals*; in the grid that is **"you may not shut the last open gate."** Without it
+the observer would trivially "identify" intent by making the task impossible.
+
+### Faithful subject (n = 48, exhaustive)
+
+```
+mode                observer   exact ID   |H| final   sound   misID   forced/ep   cost/ep
+online probing      passive       31.2%       2.42     100%    0.0%        0.00    +0.000
+online probing      random        38.2%       2.32     100%    0.0%        1.36   -13.500
+online probing      adaptive      95.8%       1.04     100%    0.0%        6.00    -6.854
+
+environment design  passive       31.2%       2.42     100%    0.0%        0.00    +0.000
+environment design  random        28.5%       2.65     100%    0.0%        0.97    -2.569
+environment design  adaptive      39.6%       2.12     100%    0.0%        0.79    -4.000
+```
+`random` ranges over seeds 1–3: online 33.3–41.7%, design 25.0–35.4%.
+
+### The result: online probing strictly beats environment design
+
+**95.8% against 39.6%**, and the gap is not merely empirical — it is structural.
+
+Pool the subject's behaviour under **every** legal layout and vantage. Two
+intents that agree everywhere in that pool cannot be told apart by **any single
+fixed configuration**, since one configuration sees strictly less than the pool.
+That pooled bound is **34/48 = 70.8%**, and it is an upper bound on what the best
+possible environment design can achieve.
+
+Adaptive online probing reaches **95.8%**, which is *above that bound*. It is not
+bound by it, because it can **reconfigure mid-episode**. Worked case: from start
+`(3,0)`, `A/direct` and `A/open_field` are identical under every fixed layout —
+but the observer closes gates 2 and 1, reopens 2, later reopens 1, and at step 15
+the two rules finally take different turns out of the same square. Opening a gate
+changes how open the neighbouring cells are, and the two rules score openness
+oppositely. No static layout produces that moment; a sequence does.
+
+So the two things we had been treating as interchangeable are **formally
+separated**: there exist intent pairs that online inquiry distinguishes and that
+no environment design can. This is the first claim in the project that is about
+GRD rather than analogous to it.
+
+Adaptive also costs *less* than random (−6.85 vs −13.50) while identifying far
+better: the cost is in choosing which gate to close, not in closing many.
+
+### The poker result replicates — it was not a poker artifact
+
+Same construction as the consistent misattributor: the subject declares one
+intent and faithfully plays **another**, chosen to be the most pinnable. It never
+leaves the model.
+
+```
+mode                observer   exact ID   |H| final   sound    misID   forced/ep
+online probing      passive        0.0%       1.04     0.0%    97.9%        0.00
+online probing      random         0.0%       2.34    13.2%    54.9%        1.69
+online probing      adaptive       0.0%       1.00     0.0%   100.0%        6.81
+
+environment design  passive        0.0%       1.04     0.0%    97.9%        0.00
+environment design  random         0.0%       2.59    18.1%    34.7%        0.90
+environment design  adaptive       0.0%       1.04     0.0%    97.9%        1.69
+```
+
+**Adaptive online probing is misattributed on 100% of episodes** — 48 of 48, every
+one ending on exactly one intent, always the wrong one. The ordering from poker
+holds exactly: adaptive worst, passive next, **random safest** (54.9%) purely
+because it learns least. Competence is the vulnerability, in a second environment
+with a different action space, different intent structure, and no hidden
+information at all.
+
+That is the point of having two environments. The misattribution result is a
+property of **exact elimination over intents-as-policies**, not of poker.
+
+### Shared code, and what could not be shared
+
+`core.py` holds the per-episode record schema, every metric computed from it,
+seed aggregation, Wilson intervals and table rendering — both environments import
+it. What is **not** shared is the elimination step and the selection rule: each is
+a few lines over an environment-specific `policy()` and action set, and the
+recursion that scores actions has to walk that environment's own tree.
+Abstracting them behind callbacks would have added more indirection than it
+removed and obscured the thing a reader needs to check — that the two
+environments really do apply the same rule. `sweep.py verify` holds them honest
+instead.
+
+### Environment self-checks (in the gate)
+
+`sweep.py verify` now fails if any of these fail, because no gridworld number
+means anything otherwise:
+
+```
+reachability   every destination from every start, every legal layout: 84/84
+termination    longest episode 19 steps (cap 30); failed to arrive: 0
+distinctness   12/12 intents behave distinctly
+```
+
 ## Commands
 
 ```

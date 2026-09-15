@@ -1,0 +1,477 @@
+<title>What Probing Buys</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@500;600&display=swap">
+
+<style>
+:root {
+  color-scheme: light;
+  --ground:        #f2f3ef;
+  --surface:       #fcfcfb;
+  --surface-sunk:  #e9eae5;
+  --rule:          #d9dad3;
+  --rule-strong:   #b9bab2;
+  --ink:           #14150f;
+  --ink-2:         #52514e;
+  --ink-3:         #78776f;
+
+  --adaptive:      #2a78d6;
+  --passive:       #eb6834;
+  --random:        #1baf7a;
+  --critical:      #d03b3b;
+  --good:          #0ca30c;
+
+  --measure: 34rem;
+  --s1: .35rem; --s2: .7rem; --s3: 1.15rem; --s4: 1.9rem; --s5: 3rem; --s6: 4.6rem;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --ground:       #121311;
+    --surface:      #1a1a19;
+    --surface-sunk: #232321;
+    --rule:         #32322f;
+    --rule-strong:  #4c4c47;
+    --ink:          #f3f3ef;
+    --ink-2:        #c3c2b7;
+    --ink-3:        #94938a;
+    --adaptive:     #3987e5;
+    --passive:      #d95926;
+    --random:       #199e70;
+    --critical:     #d03b3b;
+    --good:         #0ca30c;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --ground:       #121311;
+  --surface:      #1a1a19;
+  --surface-sunk: #232321;
+  --rule:         #32322f;
+  --rule-strong:  #4c4c47;
+  --ink:          #f3f3ef;
+  --ink-2:        #c3c2b7;
+  --ink-3:        #94938a;
+  --adaptive:     #3987e5;
+  --passive:      #d95926;
+  --random:       #199e70;
+  --critical:     #d03b3b;
+  --good:         #0ca30c;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--ground);
+  color: var(--ink);
+  font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 61rem; margin: 0 auto; padding: var(--s5) var(--s3) var(--s6); }
+.col  { max-width: var(--measure); }
+
+h1, h2, h3 { font-family: "IBM Plex Serif", Georgia, serif; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(2.1rem, 5.4vw, 3.1rem); font-weight: 600; line-height: 1.08; letter-spacing: -.018em; }
+h2 { font-size: clamp(1.45rem, 3vw, 1.85rem); font-weight: 600; line-height: 1.18; letter-spacing: -.012em; }
+h3 { font-size: 1.05rem; font-weight: 600; line-height: 1.3; }
+p  { margin: 0; }
+strong { font-weight: 600; }
+
+.mono, .eyebrow, .num { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; }
+.eyebrow {
+  font-size: .69rem; font-weight: 500; letter-spacing: .13em;
+  text-transform: uppercase; color: var(--ink-3);
+}
+.num { font-variant-numeric: tabular-nums; }
+
+/* ---------- masthead ---------- */
+.masthead { display: flex; flex-direction: column; gap: var(--s3); }
+.lede { font-size: 1.18rem; line-height: 1.55; color: var(--ink-2); max-width: var(--measure); }
+.lede em { font-style: normal; color: var(--ink); font-weight: 500; }
+
+.facts {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0; margin-top: var(--s3);
+  border-top: 1px solid var(--rule-strong); border-bottom: 1px solid var(--rule);
+}
+.fact { padding: var(--s2) var(--s3) var(--s2) 0; }
+.fact dt { font-family: "IBM Plex Mono", monospace; font-size: .66rem; letter-spacing: .12em;
+           text-transform: uppercase; color: var(--ink-3); margin-bottom: 2px; }
+.fact dd { margin: 0; font-size: .92rem; font-variant-numeric: tabular-nums; }
+
+/* ---------- acts ---------- */
+.act { margin-top: var(--s6); display: flex; flex-direction: column; gap: var(--s3); }
+.act-head { display: flex; align-items: baseline; gap: var(--s2); }
+.act-n {
+  font-family: "IBM Plex Mono", monospace; font-size: .8rem; font-weight: 600;
+  color: var(--ink-3); letter-spacing: .06em; padding-top: .18rem;
+}
+.claim {
+  font-family: "IBM Plex Serif", Georgia, serif; font-size: 1.12rem; font-weight: 500;
+  line-height: 1.45; color: var(--ink); max-width: var(--measure);
+  border-left: 2px solid var(--rule-strong); padding-left: var(--s3);
+}
+.act p + p { margin-top: var(--s2); }
+
+/* ---------- figures ---------- */
+figure { margin: var(--s2) 0 0; }
+.panel {
+  background: var(--surface); border: 1px solid var(--rule); border-radius: 3px;
+  padding: var(--s3) var(--s3) var(--s2);
+}
+.panel-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s2) var(--s3); margin-bottom: var(--s3); }
+.panel-head h3 { flex: 1 1 14rem; }
+figcaption { font-size: .82rem; color: var(--ink-2); margin-top: var(--s2); max-width: 46rem; }
+
+.legend { display: flex; flex-wrap: wrap; gap: var(--s1) var(--s3); }
+.key { display: inline-flex; align-items: center; gap: .4rem; font-size: .76rem; color: var(--ink-2); }
+.swatch { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+
+.charts-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); gap: var(--s4); }
+.chart-scroll { overflow-x: auto; }
+svg { display: block; max-width: 100%; height: auto; }
+svg text { font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; }
+
+/* ---------- table ---------- */
+details.table { margin-top: var(--s2); }
+details.table summary {
+  font-family: "IBM Plex Mono", monospace; font-size: .74rem; letter-spacing: .05em;
+  color: var(--ink-2); cursor: pointer; padding: var(--s1) 0;
+}
+details.table summary:focus-visible { outline: 2px solid var(--adaptive); outline-offset: 3px; }
+table { border-collapse: collapse; width: 100%; font-size: .8rem; margin-top: var(--s2); }
+th, td { text-align: right; padding: .34rem .6rem; border-bottom: 1px solid var(--rule); }
+th:first-child, td:first-child { text-align: left; }
+thead th { font-family: "IBM Plex Mono", monospace; font-size: .66rem; letter-spacing: .08em;
+           text-transform: uppercase; color: var(--ink-3); font-weight: 500; }
+td.n { font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; }
+
+/* ---------- callout ---------- */
+.turn {
+  background: var(--surface-sunk); border-left: 3px solid var(--critical);
+  padding: var(--s3); border-radius: 0 3px 3px 0; max-width: 46rem;
+}
+.turn .eyebrow { color: var(--critical); }
+.turn p { margin-top: var(--s1); max-width: var(--measure); }
+
+/* ---------- close ---------- */
+.close { margin-top: var(--s6); border-top: 1px solid var(--rule-strong); padding-top: var(--s3); }
+.openq { display: grid; gap: var(--s3); grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); margin-top: var(--s3); }
+.openq > div { border-top: 1px solid var(--rule); padding-top: var(--s2); }
+.openq h3 { margin-bottom: var(--s1); }
+.openq p { font-size: .88rem; color: var(--ink-2); }
+footer { margin-top: var(--s5); font-size: .76rem; color: var(--ink-3); }
+code { font-family: "IBM Plex Mono", monospace; font-size: .86em;
+       background: var(--surface-sunk); padding: .08em .34em; border-radius: 2px; }
+
+/* ---------- tooltip ---------- */
+#tip {
+  position: fixed; z-index: 9; pointer-events: none; opacity: 0;
+  transition: opacity .12s ease; background: var(--ink); color: var(--ground);
+  font-family: "IBM Plex Mono", monospace; font-size: .72rem; line-height: 1.45;
+  padding: .4rem .55rem; border-radius: 3px; white-space: pre; font-variant-numeric: tabular-nums;
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <span class="eyebrow">Yale ROSE &middot; adaptive counterfactual inquiry</span>
+    <h1>What probing buys</h1>
+    <p class="lede">An observer watches someone play poker and tries to work out <em>what they are trying to do</em>. It can sit back and watch, or it can act — choosing its own moves to make the answer show itself. This is what that choice is worth, and where it turns against you.</p>
+
+    <dl class="facts">
+      <div class="fact"><dt>Games</dt><dd>Kuhn &middot; Leduc hold'em</dd></div>
+      <div class="fact"><dt>Hands per cell</dt><dd class="num">6,000</dd></div>
+      <div class="fact"><dt>Seeds</dt><dd class="num">1, 2, 3 &middot; paired deals</dd></div>
+      <div class="fact"><dt>Method</dt><dd>Exact set elimination</dd></div>
+      <div class="fact"><dt>Learned components</dt><dd class="num">0</dd></div>
+    </dl>
+  </header>
+
+  <!-- ============ ACT 1 ============ -->
+  <section class="act">
+    <div class="act-head"><span class="act-n">01</span><h2>Probing works</h2></div>
+    <p class="claim">Choosing moves to expose intent roughly <strong>triples</strong> exact identification in Kuhn and adds ten points in Leduc — against a subject whose behaviour the intent model actually describes.</p>
+
+    <p class="col">Three observers see identical deals. <span class="mono">passive</span> never probes: it checks and calls through. <span class="mono">random</span> acts arbitrarily. <span class="mono">adaptive</span> picks the move that minimises the expected number of intents left standing. Nothing else differs.</p>
+
+    <figure>
+      <div class="panel">
+        <div class="panel-head">
+          <h3>Exact identification rate</h3>
+          <div class="legend">
+            <span class="key"><span class="swatch" style="background:var(--passive)"></span>passive</span>
+            <span class="key"><span class="swatch" style="background:var(--random)"></span>random</span>
+            <span class="key"><span class="swatch" style="background:var(--adaptive)"></span>adaptive</span>
+          </div>
+        </div>
+        <div class="charts-2">
+          <div class="chart-scroll"><div id="c-exact-kuhn"></div></div>
+          <div class="chart-scroll"><div id="c-exact-leduc"></div></div>
+        </div>
+        <figcaption>Share of hands where the surviving hypothesis set collapsed to exactly the intent the subject declared. Bars show the mean over seeds 1&ndash;3; the thin rule marks the seed range. Soundness is 100% in every cell here — the true intent is never wrongly eliminated.</figcaption>
+      </div>
+
+      <details class="table">
+        <summary>Show the numbers</summary>
+        <table>
+          <thead><tr><th>Game / observer</th><th>Exact ID</th><th>Range</th><th>Intents left</th><th>Chips/hand</th></tr></thead>
+          <tbody>
+            <tr><td>Kuhn &middot; passive</td><td class="n">6.8%</td><td class="n">6.6–7.0</td><td class="n">2.85</td><td class="n">+0.001</td></tr>
+            <tr><td>Kuhn &middot; random</td><td class="n">10.6%</td><td class="n">10.2–10.9</td><td class="n">2.55</td><td class="n">+0.032</td></tr>
+            <tr><td>Kuhn &middot; adaptive</td><td class="n">20.8%</td><td class="n">19.9–21.6</td><td class="n">2.06</td><td class="n">+0.411</td></tr>
+            <tr><td>Leduc &middot; passive</td><td class="n">28.0%</td><td class="n">27.4–28.7</td><td class="n">3.16</td><td class="n">−0.121</td></tr>
+            <tr><td>Leduc &middot; random</td><td class="n">20.4%</td><td class="n">19.9–20.9</td><td class="n">3.29</td><td class="n">−0.243</td></tr>
+            <tr><td>Leduc &middot; adaptive</td><td class="n">38.5%</td><td class="n">37.8–39.4</td><td class="n">2.65</td><td class="n">−0.509</td></tr>
+          </tbody>
+        </table>
+      </details>
+    </figure>
+
+    <p class="col">The other half of the same result is the surviving set. Adaptive probing cuts it from <span class="num mono">2.85</span> to <span class="num mono">2.06</span> intents in Kuhn and <span class="num mono">3.16</span> to <span class="num mono">2.65</span> in Leduc — our working proxy for worst-case distinctiveness. <span class="mono">random</span> is the control that matters: acting arbitrarily gets you a little in Kuhn and <em>loses</em> ground in Leduc. Acting is not what helps. Acting <em>on the right rule</em> is.</p>
+  </section>
+
+  <!-- ============ ACT 2 ============ -->
+  <section class="act">
+    <div class="act-head"><span class="act-n">02</span><h2>And it is free</h2></div>
+    <p class="claim">Probing looked like it cost half a chip a hand. Almost all of that was waste: a small chip-awareness term buys back the loss <em>and</em> identifies slightly better.</p>
+
+    <p class="col">In Leduc the information-only observer loses <span class="num mono">−0.509</span> chips a hand, because a round-two probe is a four-chip bet. Weighting its objective by <span class="mono">μ</span> — minimise expected intents left, minus <span class="mono">μ</span> times expected chips — traces the frontier between knowing and winning.</p>
+
+    <figure>
+      <div class="panel">
+        <div class="panel-head">
+          <h3>The information–chip frontier</h3>
+          <span class="key" style="color:var(--ink-3)">Leduc &middot; faithful subject &middot; n = 6,000 per point</span>
+        </div>
+        <div class="chart-scroll"><div id="c-frontier"></div></div>
+        <figcaption>Each point is one setting of <span class="mono">μ</span>. Up is better identification; right is more profitable. <span class="mono">μ = 0.1</span> sits above <em>and</em> to the right of <span class="mono">μ = 0</span> — it dominates the information-only rule outright. Past <span class="mono">μ ≈ 0.25</span> the trade becomes real and identification is sold for chips.</figcaption>
+      </div>
+    </figure>
+
+    <p class="col">At <span class="mono">μ = 0.1</span> the observer identifies <span class="num mono">39.0%</span> — marginally better than the information-only <span class="num mono">38.5%</span> — while turning <span class="num mono">−0.509</span> chips a hand into <span class="num mono">+0.147</span>. The loss was never the price of information. It was probes that bought nothing the observer could not get more cheaply. Beyond that the frontier bends: <span class="mono">μ = 1</span> gives <span class="num mono">30.0%</span> at <span class="num mono">+0.652</span>, and by <span class="mono">μ ≥ 2</span> you have a chip maximiser that happens to learn things.</p>
+
+    <p class="col">This moves the work <em>toward</em> goal recognition design rather than away from it. GRD minimises worst-case distinctiveness subject to not preventing agents from achieving their goals — a constrained optimisation. <span class="mono">μ</span> is that constraint.</p>
+  </section>
+
+  <!-- ============ ACT 3 ============ -->
+  <section class="act">
+    <div class="act-head"><span class="act-n">03</span><h2>Until the vocabulary doesn't fit</h2></div>
+    <p class="claim">Everything above holds only while the subject's behaviour is generated by one of the intents we wrote down. When it isn't, probing stops helping — and then starts actively hurting.</p>
+
+    <p class="col">Goal recognition design assumes the actor's behaviour comes from one of the modelled goals. Real subjects are not in that set — rarely because they conceal, mostly because a finite menu of intents will not cover what a person actually does. They pick the nearest label, change their mind, misread the option, or play badly. <strong>All of it looks identical to the observer.</strong></p>
+
+    <p class="col">First the advantage simply evaporates. Against behaviour the model cannot explain, exact identification falls to <span class="num mono">0%</span> for every observer, probing or not. That is survivable: the observer ends up uncertain, which is honest.</p>
+
+    <div class="turn">
+      <span class="eyebrow">The turn</span>
+      <p>Now consider a subject who declares one intent and simply <em>plays a different one</em> — faithfully, never contradicting the model. The nearest-option case. There is no deception here at all.</p>
+    </div>
+
+    <p class="col">Because the played intent generates every action and matches the revealed card, it can never be eliminated. So whenever the observer narrows to a single intent, that intent is the one being played — and the declared one is wrong. Probing harder makes the observer <em>more</em> certain of the wrong answer.</p>
+
+    <figure>
+      <div class="panel">
+        <div class="panel-head">
+          <h3>Confident, and wrong</h3>
+          <span class="key" style="color:var(--ink-3)">Hands ending on exactly one intent — the wrong one</span>
+        </div>
+        <div class="charts-2">
+          <div class="chart-scroll"><div id="c-mis-kuhn"></div></div>
+          <div class="chart-scroll"><div id="c-mis-leduc"></div></div>
+        </div>
+        <figcaption>Misattribution rate against a subject who declares one intent and plays another. Contradiction rate is exactly <span class="num mono">0</span> in every cell — the model is never refuted, so a contradiction-detecting observer never fires and makes no difference to any figure here.</figcaption>
+      </div>
+    </figure>
+
+    <p class="col">In Kuhn the ordering is unambiguous: the adaptive observer is misattributed <span class="num mono">79.2%</span> of the time against passive's <span class="num mono">25.5%</span>. In Leduc every observer is badly wrong and the adaptive one is worst, at <span class="num mono">98.6%</span>; the random observer is the safest of the three purely because it learns least. <strong>Competence is the vulnerability.</strong></p>
+
+    <p class="col">And the richer game is the worse one — <span class="num mono">98.6%</span> against Kuhn's <span class="num mono">79.2%</span>. More room to distinguish intents means intents are more distinguishable, which is exactly what makes the wrong one identifiable with certainty. Every gain in worst-case distinctiveness is also a gain in worst-case <em>mis</em>-distinctiveness.</p>
+  </section>
+
+  <!-- ============ CLOSE ============ -->
+  <section class="close">
+    <span class="eyebrow">Where this leaves us</span>
+    <h2 style="margin-top:var(--s2)">Probing is the right rule, and it is not enough</h2>
+    <p class="col" style="margin-top:var(--s3)">The observer in act 3 is not being lied to. It is being told the truth by someone whose label and behaviour have come apart, and it answers with precision. Nothing in the elimination framework fixes this: the conclusion is <em>correct about the policy</em> and wrong only about the name.</p>
+
+    <div class="openq">
+      <div>
+        <h3>The open problem</h3>
+        <p>No action history separates &ldquo;is executing <span class="mono">probe</span>&rdquo; from &ldquo;believes they are executing <span class="mono">value_bet</span>.&rdquo; That is a limit of behavioural inference, not of this implementation — and it is the strongest argument for measuring declared intent against behaviour rather than assuming they match.</p>
+      </div>
+      <div>
+        <h3>What we can already do</h3>
+        <p>When behaviour leaves the model entirely, the observer can detect it and abstain, trading four to five confident-wrong answers for each confident-right one given up — and costing nothing at all against a faithful subject.</p>
+      </div>
+      <div>
+        <h3>What comes next</h3>
+        <p>A tolerance term so a single off-policy human action does not empty the hypothesis set, then a human pilot to measure how often real declared intent and real behaviour actually diverge.</p>
+      </div>
+    </div>
+
+    <footer>
+      Exact set elimination over a finite hypothesis space — no LLM, no learned distance metric, no sampling where enumeration is possible. Every figure reproduces from <span class="mono">sweep.py</span>; conditions are compared on identical deals, so differences are paired rather than independent samples.
+    </footer>
+  </section>
+</div>
+
+<div id="tip" role="status" aria-live="polite"></div>
+
+<script>
+(function () {
+  "use strict";
+  var tip = document.getElementById("tip");
+  function showTip(e, text) {
+    tip.textContent = text;
+    tip.style.opacity = "1";
+    var pad = 14, w = tip.offsetWidth, h = tip.offsetHeight;
+    var x = e.clientX + pad, y = e.clientY - h - 8;
+    if (x + w > window.innerWidth - 8) x = e.clientX - w - pad;
+    if (y < 8) y = e.clientY + pad;
+    tip.style.left = x + "px";
+    tip.style.top = y + "px";
+  }
+  function hideTip() { tip.style.opacity = "0"; }
+
+  var SER = { passive: "var(--passive)", random: "var(--random)", adaptive: "var(--adaptive)" };
+
+  // ---------- horizontal bar chart ----------
+  function barChart(mount, opt) {
+    var data = opt.data, max = opt.max, unit = opt.unit || "%";
+    var W = 380, padL = 74, padR = 46, padT = 30, padB = 26;
+    var rowH = 38, gap = 12;
+    var H = padT + data.length * rowH + padB;
+    var plotW = W - padL - padR;
+    var x = function (v) { return padL + (v / max) * plotW; };
+
+    var s = [];
+    s.push('<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + opt.title + '">');
+    s.push('<text x="0" y="12" fill="var(--ink-2)" font-size="11" font-weight="500" letter-spacing=".08em">' + opt.title.toUpperCase() + '</text>');
+
+    // baseline + max tick
+    s.push('<line x1="' + padL + '" y1="' + padT + '" x2="' + padL + '" y2="' + (H - padB) + '" stroke="var(--rule-strong)" stroke-width="1"/>');
+    [0, max].forEach(function (v) {
+      s.push('<text x="' + x(v) + '" y="' + (H - padB + 15) + '" fill="var(--ink-3)" font-size="10" text-anchor="' + (v === 0 ? "start" : "end") + '">' + v + unit + '</text>');
+    });
+
+    data.forEach(function (d, i) {
+      var y = padT + i * rowH + gap / 2;
+      var bh = rowH - gap;
+      var bw = Math.max(2, x(d.v) - padL);
+      var col = SER[d.k] || opt.color;
+      s.push('<text x="' + (padL - 10) + '" y="' + (y + bh / 2 + 4) + '" fill="var(--ink-2)" font-size="11.5" text-anchor="end">' + d.k + '</text>');
+      s.push('<rect class="bar" x="' + padL + '" y="' + y + '" width="' + bw + '" height="' + bh + '" rx="3" fill="' + col + '"'
+        + ' data-tip="' + d.k + '  ' + d.v + unit + (d.r ? "\nseeds " + d.r : "") + '"/>');
+      // seed-range rule
+      if (d.lo != null && d.hi != null) {
+        var cy = y + bh / 2;
+        s.push('<line x1="' + x(d.lo) + '" y1="' + cy + '" x2="' + x(d.hi) + '" y2="' + cy + '" stroke="var(--surface)" stroke-width="1.5" opacity=".85"/>');
+      }
+      s.push('<text x="' + (x(d.v) + 7) + '" y="' + (y + bh / 2 + 4) + '" fill="var(--ink)" font-size="12" font-weight="500">' + d.v + unit + '</text>');
+    });
+    s.push('</svg>');
+    mount.innerHTML = s.join("");
+    wire(mount);
+  }
+
+  function wire(mount) {
+    Array.prototype.forEach.call(mount.querySelectorAll("[data-tip]"), function (el) {
+      el.addEventListener("mousemove", function (e) { showTip(e, el.getAttribute("data-tip")); });
+      el.addEventListener("mouseleave", hideTip);
+    });
+  }
+
+  // ---------- act 1 ----------
+  barChart(document.getElementById("c-exact-kuhn"), {
+    title: "Kuhn poker", max: 45, data: [
+      { k: "passive",  v: 6.8,  lo: 6.6,  hi: 7.0,  r: "6.6–7.0" },
+      { k: "random",   v: 10.6, lo: 10.2, hi: 10.9, r: "10.2–10.9" },
+      { k: "adaptive", v: 20.8, lo: 19.9, hi: 21.6, r: "19.9–21.6" }
+    ]
+  });
+  barChart(document.getElementById("c-exact-leduc"), {
+    title: "Leduc hold'em", max: 45, data: [
+      { k: "passive",  v: 28.0, lo: 27.4, hi: 28.7, r: "27.4–28.7" },
+      { k: "random",   v: 20.4, lo: 19.9, hi: 20.9, r: "19.9–20.9" },
+      { k: "adaptive", v: 38.5, lo: 37.8, hi: 39.4, r: "37.8–39.4" }
+    ]
+  });
+
+  // ---------- act 3 ----------
+  barChart(document.getElementById("c-mis-kuhn"), {
+    title: "Kuhn poker", max: 100, data: [
+      { k: "passive",  v: 25.5, r: "24.8–26.2" },
+      { k: "random",   v: 38.9, r: "38.6–39.5" },
+      { k: "adaptive", v: 79.2, r: "78.5–80.1" }
+    ]
+  });
+  barChart(document.getElementById("c-mis-leduc"), {
+    title: "Leduc hold'em", max: 100, data: [
+      { k: "passive",  v: 95.5, r: "94.9–96.2" },
+      { k: "random",   v: 52.1, r: "50.5–53.8" },
+      { k: "adaptive", v: 98.6, r: "98.0–99.0" }
+    ]
+  });
+
+  // ---------- act 2: frontier ----------
+  (function () {
+    var pts = [
+      { mu: "passive",  x: -0.121, y: 28.0, ref: true },
+      { mu: "μ=0",      x: -0.509, y: 38.5 },
+      { mu: "μ=0.1",    x:  0.147, y: 39.0, star: true },
+      { mu: "μ=0.25",   x:  0.307, y: 37.1 },
+      { mu: "μ=0.5",    x:  0.386, y: 33.2 },
+      { mu: "μ=1",      x:  0.652, y: 30.0 },
+      { mu: "μ=2",      x:  0.792, y: 22.4 }
+    ];
+    var W = 780, H = 360, padL = 62, padR = 28, padT = 26, padB = 52;
+    var xmin = -0.7, xmax = 0.95, ymin = 18, ymax = 42;
+    var X = function (v) { return padL + (v - xmin) / (xmax - xmin) * (W - padL - padR); };
+    var Y = function (v) { return H - padB - (v - ymin) / (ymax - ymin) * (H - padT - padB); };
+
+    var s = ['<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Identification against profit across mu">'];
+
+    // grid
+    [20, 25, 30, 35, 40].forEach(function (v) {
+      s.push('<line x1="' + padL + '" y1="' + Y(v) + '" x2="' + (W - padR) + '" y2="' + Y(v) + '" stroke="var(--rule)" stroke-width="1"/>');
+      s.push('<text x="' + (padL - 9) + '" y="' + (Y(v) + 4) + '" fill="var(--ink-3)" font-size="10.5" text-anchor="end">' + v + '%</text>');
+    });
+    [-0.5, -0.25, 0, 0.25, 0.5, 0.75].forEach(function (v) {
+      var isZero = v === 0;
+      s.push('<line x1="' + X(v) + '" y1="' + padT + '" x2="' + X(v) + '" y2="' + (H - padB) + '" stroke="' + (isZero ? "var(--rule-strong)" : "var(--rule)") + '" stroke-width="1"' + (isZero ? '' : ' stroke-dasharray="2 4"') + '/>');
+      s.push('<text x="' + X(v) + '" y="' + (H - padB + 17) + '" fill="var(--ink-3)" font-size="10.5" text-anchor="middle">' + (v > 0 ? "+" : "") + v + '</text>');
+    });
+    s.push('<text x="' + X(0) + '" y="' + (H - padB + 34) + '" fill="var(--ink-2)" font-size="10.5" text-anchor="middle" letter-spacing=".05em">BREAK EVEN</text>');
+    s.push('<text x="' + (W - padR) + '" y="' + (H - 8) + '" fill="var(--ink-3)" font-size="10.5" text-anchor="end">chips per hand →</text>');
+    s.push('<text x="0" y="12" fill="var(--ink-2)" font-size="11" font-weight="500" letter-spacing=".08em">EXACT ID ↑</text>');
+
+    // path through the mu series (skip the passive reference point)
+    var line = pts.filter(function (p) { return !p.ref; })
+      .map(function (p, i) { return (i ? "L" : "M") + X(p.x) + " " + Y(p.y); }).join(" ");
+    s.push('<path d="' + line + '" fill="none" stroke="var(--adaptive)" stroke-width="2" stroke-linejoin="round" opacity=".55"/>');
+
+    pts.forEach(function (p) {
+      var col = p.ref ? "var(--passive)" : "var(--adaptive)";
+      var r = p.star ? 8 : 6;
+      s.push('<circle cx="' + X(p.x) + '" cy="' + Y(p.y) + '" r="' + (r + 2.5) + '" fill="var(--surface)"/>');
+      s.push('<circle class="pt" cx="' + X(p.x) + '" cy="' + Y(p.y) + '" r="' + r + '" fill="' + col + '"'
+        + (p.star ? ' stroke="var(--ink)" stroke-width="2"' : '')
+        + ' data-tip="' + p.mu + '\nexact ID  ' + p.y.toFixed(1) + '%\nchips     ' + (p.x > 0 ? "+" : "") + p.x.toFixed(3) + '"/>');
+      var dy = (p.mu === "μ=0.1") ? -18 : (p.mu === "passive" ? 20 : (p.mu === "μ=0" ? -18 : 20));
+      s.push('<text x="' + X(p.x) + '" y="' + (Y(p.y) + dy) + '" fill="var(--ink-2)" font-size="11" text-anchor="middle">' + p.mu + '</text>');
+    });
+
+    // annotation for the dominating point
+    s.push('<text x="' + (X(0.147) + 14) + '" y="' + (Y(39.0) - 30) + '" fill="var(--ink-3)" font-size="10.5">dominates μ=0</text>');
+
+    s.push('</svg>');
+    var m = document.getElementById("c-frontier");
+    m.innerHTML = s.join("");
+    wire(m);
+  })();
+})();
+</script>

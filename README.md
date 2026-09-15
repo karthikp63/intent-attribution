@@ -215,10 +215,39 @@ checking reveals only the card.
 - [x] Cost-aware misfit generator and observer (λ / μ sweeps)
 - [x] Deception-aware observer — abstain once the model has been refuted
 - [x] Consistent misattributor — in-model attack that defeats the above
+- [x] Second environment (gridworld) + real GRD claim: online probing vs design
 - [ ] Human pilot — soundness rate for real subjects
 - [x] LLM as *proposer only* — symbolic layer validates; rejection rate measured
       (12.5% constrained / 60% free-form / 75% repair)
 - [ ] Concordia wrapper: custom Game Master delegating resolution to this code
+
+## Gridworld — the second environment
+
+`python3 gridworld.py --map`. 8x8 grid, a wall with three gates, three
+destinations, four routing rules; an intent is a (destination, routing rule)
+pair. A probe is legible in one sentence: **close a corridor and see which way
+they turn.**
+
+It exists for two reasons. First, two environments sharing one mechanism is a
+much stronger claim than one — and the misattribution result **replicates**
+(adaptive online probing: 100% misID, random safest), so it is a property of
+exact elimination, not of poker. Second, it closes an honesty gap: we cite GRD
+but had only ever done online inquiry in a fixed environment. The grid does both
+and reports them separately.
+
+| mode | observer | exact ID | \|H\| final | cost/ep |
+|---|---|---|---|---|
+| online probing | passive | 31.2% | 2.42 | 0.000 |
+| online probing | adaptive | **95.8%** | 1.04 | −6.85 |
+| environment design (GRD) | adaptive | 39.6% | 2.12 | −4.00 |
+
+n = 48 per cell, **enumerated exhaustively** rather than sampled.
+
+**Online probing strictly beats environment design, and provably.** Pooling every
+fixed layout bounds exact ID at 34/48 = 70.8% — an upper bound on any environment
+design. Adaptive online reaches 95.8% by reconfiguring *mid-episode*, separating
+intent pairs that no static layout can. GRD's own constraint is enforced
+literally: you may not shut the last open gate.
 
 ## LLM as proposer
 

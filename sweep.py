@@ -8,6 +8,7 @@ Sweeps and hardening for the cost-aware misfit generator / observer.
     python3 sweep.py harden        # misID confidence interval, contradiction timing
     python3 sweep.py deception     # task 4c: deception-aware observer, and what it costs
     python3 sweep.py misattribute  # the consistent misattributor: stays in-model, still wrong
+    python3 sweep.py grid          # gridworld: online probing vs environment design (GRD)
     python3 sweep.py all
 
 Every cell: 2000 hands per seed, seeds 1-3; table shows the seed mean and,
@@ -18,6 +19,8 @@ import math
 import random
 import sys
 
+import core
+import gridworld as GW
 import kuhn_intent as K
 import leduc_intent as L
 
@@ -201,7 +204,7 @@ def verify():
         for k in mdiff:
             print(f"    {k}: greedy={ma[k]!r}  lookahead={mb[k]!r}")
 
-    ok = (not bad_records) and (not bad_metrics) and kuhn_coverage()
+    ok = (not bad_records) and (not bad_metrics) and kuhn_coverage() and grid_selfcheck()
     print("\nRESULT: " + ("PASS -- identical hand for hand and metric for metric."
                           if ok else
                           "FAIL -- divergence found. STOP; one implementation is wrong."))
@@ -584,6 +587,102 @@ def misattribute():
           ", ".join(f"{i} x{n}" for i, n in Counter(choices.values()).most_common()))
 
 
+# ------------------------------------------- gridworld: the second environment
+
+def grid_selfcheck():
+    """The environment's own falsifiers. If any of these fail, no gridworld
+    number below means anything."""
+    print("\n### Gridworld environment checks\n")
+    ok = True
+
+    bad = tot = 0
+    for closed in range(1 << len(GW.GATES)):
+        if not GW.legal_close(closed):
+            continue
+        for d in GW.DESTS.values():
+            f = GW.dist_field(d, closed)
+            for s in GW.STARTS:
+                tot += 1
+                bad += s not in f
+    print(f"  reachability   every destination from every start, every legal layout: "
+          f"{tot - bad}/{tot} reachable")
+    ok &= bad == 0
+
+    worst = stuck = 0
+    for closed in range(1 << len(GW.GATES)):
+        if not GW.legal_close(closed):
+            continue
+        for s in GW.STARTS:
+            for i in GW.INTENTS:
+                pos, t = s, 0
+                while t < GW.STEP_CAP:
+                    m = GW.policy(i, pos, closed, 1)
+                    if m == "stop":
+                        break
+                    pos = GW.step(pos, m)
+                    t += 1
+                worst = max(worst, t)
+                stuck += pos != GW.DESTS[i[0]]
+    print(f"  termination    longest episode {worst} steps (cap {GW.STEP_CAP}); "
+          f"failed to arrive: {stuck}")
+    ok &= stuck == 0 and worst < GW.STEP_CAP
+
+    sig = {}
+    for i in GW.INTENTS:
+        tr = []
+        for closed in range(1 << len(GW.GATES)):
+            if not GW.legal_close(closed):
+                continue
+            for v in range(len(GW.VANTAGES)):
+                pos, t = s, 0
+                for s2 in GW.STARTS:
+                    pos, t = s2, 0
+                    while t < GW.STEP_CAP:
+                        m = GW.policy(i, pos, closed, v)
+                        tr.append(m)
+                        if m == "stop":
+                            break
+                        pos = GW.step(pos, m)
+                        t += 1
+        sig.setdefault(tuple(tr), []).append(GW.name(i))
+    dupes = [v for v in sig.values() if len(v) > 1]
+    print(f"  distinctness   {len(sig)}/{len(GW.INTENTS)} intents behave distinctly"
+          + ("" if not dupes else f"  DUPLICATES: {dupes}"))
+    ok &= not dupes
+
+    print("\n  " + ("PASS" if ok else "FAIL -- gridworld results are not trustworthy"))
+    return ok
+
+
+def grid():
+    uniq, tot = GW.static_ceiling()
+    print("\n## Gridworld: online probing vs. environment design\n")
+    print("Episodes are ENUMERATED, not sampled: every start x every intent = "
+          f"{len(GW.STARTS) * len(GW.INTENTS)} per cell.")
+    print("Only the `random` observer varies with the seed; passive and adaptive are")
+    print(f"deterministic, so their [min, max] is degenerate by construction.\n")
+    print(f"Upper bound on exact ID for ANY FIXED layout (pooling every legal layout")
+    print(f"and vantage): {uniq}/{tot} = {uniq / tot:.1%}. Environment design cannot beat this.")
+    print("Online probing is not bound by it -- it can reconfigure mid-episode.\n")
+
+    for subject in ["faithful", "misattribute"]:
+        for mode in ["online", "design"]:
+            results = {}
+            for cond in ["passive", "random", "adaptive"]:
+                per = []
+                seeds = SEEDS if cond == "random" else SEEDS[:1]
+                fn = (None if subject == "faithful" else
+                      (lambda st, d, c=cond, m=mode: GW.misattributing_intent(st, d, c, m)))
+                for s in seeds:
+                    rows = GW.all_episodes(cond, mode, random.Random(s), 0.0, fn)
+                    per.append(core.summarise(rows, GW.KEYS))
+                results[cond] = core.aggregate(per)
+            label = ("online probing" if mode == "online" else "environment design (GRD)")
+            print(f"\n### {label} / {subject} subject")
+            core.print_table(results, GW.KEYS, SEEDS, tot, "observer",
+                             total_n=tot, notes=[])
+
+
 if __name__ == "__main__":
     what = sys.argv[1] if len(sys.argv) > 1 else "all"
     if what in ("verify", "all"):
@@ -599,3 +698,5 @@ if __name__ == "__main__":
         deception()
     if what in ("misattribute", "all"):
         misattribute()
+    if what in ("grid", "all"):
+        grid()
