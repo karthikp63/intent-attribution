@@ -1240,6 +1240,80 @@ ill-formed proposals measures **how much reasoning the compile step actually
 demands**. Responses are cached by prompt hash, so a re-run is free and the
 exact bytes behind any future number stay on disk.
 
+## Gridworld human pilot — instrument built, NOT run
+
+`python3 pilot.py --check` &middot; `--irb` &middot; `--dry-run` &middot; `--analyse`
+
+Every number in this document comes from a subject that follows its declared
+intent **by construction**. The one human trial we have put posterior mass on
+the declared intent at **0.24 against a 0.20 prior**. Nothing here is validated
+on people. This is the instrument for fixing that; it has not been run.
+
+### What the poker pilot got wrong, and what changes
+
+| poker pilot | this instrument |
+|---|---|
+| 20 episodes, 1 participant | 102 episodes x 2–3 participants |
+| intents **self-chosen** — 16 of 20 were `bluff` | intents **assigned**, balanced round-robin, order shuffled per participant so intent is not confounded with fatigue |
+| **soundness** led the report, and hit 100% under soft scoring while mass stayed at 0.24 | **posterior mass on the assigned intent vs the uniform prior** leads; soundness is logged and explicitly not the headline |
+| rescoring needed the session re-run | every decision logged with full state — any eps, prior or metric recomputable offline |
+
+### The design decision that matters most: ties are equiprobable
+
+`gridworld.policy` returns one move by applying a fixed N/E/S/W order to
+whatever the routing rule leaves tied. **That order is an implementation detail
+no human will reproduce.** Scoring a person against it would manufacture misfit
+that is our artifact and then report it as theirs. So the likelihood treats
+every move the rule leaves open as equally likely:
+
+```
+P(a | intent) = (1 - eps) * [a in acceptable] / |acceptable|  +  eps / |legal|
+```
+
+`direct` is excluded from assignment by default for the same reason: "take any
+shortest path" means the tie-break carries *all* of its content.
+
+### Instrument self-check (in the gate, no human involved)
+
+```
+1. Assignment balanced           102 episodes / 9 intents -> 11-12 each
+2. Perfect vs random subject     perfect 0.558, random 0.127, prior 0.111 (eps=0.1)
+3. Tie-indifferent rule-follower mean 0.667, worst 0.167, none at or below prior
+4. Records round-trip            posterior sums to 1.000000 from the log alone
+```
+
+### A prediction the instrument makes before anyone is recruited
+
+Check 3 surfaced something worth stating in advance: a subject obeying a
+**permissive** rule is systematically attributed to a more **specific** one. If
+the move they freely chose is the only move the specific rule allows, that rule
+assigns it probability 1 while the permissive rule spreads mass across its tie
+set. This is correct Bayesian behaviour — Occam's razor over the tie set — and it
+means **permissive intents will be under-recovered**.
+
+It is also the misattribution finding arriving a third time, now in the pilot
+design rather than in a simulation. We are recording it as a pre-registered
+expectation rather than discovering it afterwards.
+
+### IRB
+
+`python3 pilot.py --irb` prints the full note. In brief, and **not** as a legal
+determination: 2–3 adults, ~25 minutes, no deception, no personal data beyond a
+participant code, keystrokes in a game. Most likely **exempt** under 45 CFR
+46.104 Category 3(i)(A) (benign behavioural intervention, adults, not readily
+identifiable) — but exemption is a determination the IRB makes, not one a
+researcher may self-certify, so a request still has to be filed and approved
+before recruiting.
+
+Prepare anyway: protocol, an information sheet with click-through consent rather
+than a signed form, a data plan (participant codes only — the logger writes
+exactly a code, timestamps and moves), and recruitment text noting any
+compensation and the recruiter–participant relationship. Deception, audio/video,
+identifiers or minors would each lose the exemption; none are in this design.
+
+**Two or three participants is an instrument shakedown, not a study.** At n = 3
+we can detect "mass sits at the prior" and nothing about a population.
+
 ## Commands
 
 ```

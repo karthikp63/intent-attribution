@@ -217,7 +217,8 @@ checking reveals only the card.
 - [x] Consistent misattributor — in-model attack that defeats the above
 - [x] Second environment (gridworld) + real GRD claim: online probing vs design
 - [x] Soft elimination (eps-noise likelihood layer) — gates the human pilot
-- [ ] Human pilot — soundness rate for real subjects
+- [x] Gridworld human-pilot instrument (built, not run)
+- [ ] Human pilot — run it
 - [x] LLM as *proposer only* — pipeline built and validated against ground truth
 - [ ] LLM proposer: an actual measured rejection rate (needs an API key)
 - [ ] Concordia wrapper: custom Game Master delegating resolution to this code
@@ -314,6 +315,18 @@ dependencies and no key.
 forced-decision decomposition and a worked Kuhn node), what probing buys, the
 information/chip frontier, and the case where it makes the observer confidently
 wrong. Published as an artifact; open the file directly or serve the directory.
+
+## Human pilot instrument
+
+`python3 pilot.py --check --irb`. Built, **not run**. Intents assigned and
+balanced (never self-chosen); headline metric is posterior mass on the assigned
+intent against the uniform prior, not soundness — soundness is what hid the
+failure last time. Ties are scored as equiprobable rather than against our
+arbitrary N/E/S/W tie-break, which no human would reproduce.
+
+It already predicts one thing: subjects following a *permissive* rule will be
+systematically attributed to a more *specific* one (Occam's razor over the tie
+set). Recorded in advance rather than discovered afterwards.
 
 ## Background
 

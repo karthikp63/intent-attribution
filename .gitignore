@@ -9,3 +9,4 @@ venv/
 .vscode/
 fixtures/cache/
 fixtures/*_run.json
+runs/
