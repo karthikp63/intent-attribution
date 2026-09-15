@@ -23,6 +23,7 @@ import sys
 import core
 import gridworld as GW
 import soft
+import vocab
 import kuhn_intent as K
 import leduc_intent as L
 
@@ -207,7 +208,8 @@ def verify():
             print(f"    {k}: greedy={ma[k]!r}  lookahead={mb[k]!r}")
 
     ok = ((not bad_records) and (not bad_metrics) and kuhn_coverage()
-          and grid_selfcheck() and soft.verify(hands=120) and document_check())
+          and grid_selfcheck() and soft.verify(hands=120)
+          and vocab.selftest() and document_check())
     print("\nRESULT: " + ("PASS -- identical hand for hand and metric for metric."
                           if ok else
                           "FAIL -- divergence found. STOP; one implementation is wrong."))

@@ -272,7 +272,26 @@ rises 45% → 100%, but posterior mass on the declared intent stays at ≈ 0.24
 against a 0.20 prior — the metric was brittle, and the underlying signal is also
 weak.
 
-## LLM as proposer
+## Vocabulary proposal (gridworld)
+
+`python3 vocab.py --selftest`. The live problem is not inference, it is
+vocabulary: the pilot put posterior mass on the declared intent at 0.24 against
+a 0.20 prior. Proposing from an already-enumerated set adds nothing, so this
+holds a routing rule **out** of the observer's vocabulary, asks an LLM to
+propose a replacement from trajectories, compiles it to an executable policy,
+and then **runs it on 36 episodes the LLM never saw**. Recovery = predicts
+held-out behaviour exactly. Every rule is held out in turn.
+
+**No recovery rate yet** — needs an API key. The harness is validated
+(DSL expresses all built-ins 72/72; episodes distinguish all 4 rules; oracle
+proposer 4/4; null and malformed proposals correctly rejected) and runs inside
+`sweep.py verify` with no key.
+
+It has already paid for itself: check 1 failed on first run and exposed that
+`wall_hug` and `open_field` were inverted relative to their names — invisible to
+every numeric check in the project, because it is a pure relabelling.
+
+## LLM as proposer (poker)
 
 `proposer.py`. The LLM **proposes**, never decides, and is never in the trust
 path: it does not eliminate hypotheses, rank them, or select probes. Every

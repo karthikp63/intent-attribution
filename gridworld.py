@@ -161,9 +161,16 @@ def policy(intent, pos, closed, vantage):
     if rule == "direct":
         key = lambda mn: 0
     elif rule == "wall_hug":
-        key = lambda mn: -openness(mn[1], closed)
-    elif rule == "open_field":
+        # FIXED 2026-09-14: these two were inverted. `best` is a MIN over the
+        # key, so wall_hug (fewest free neighbours) must key on +openness and
+        # open_field on -openness. They were the other way round, so each rule
+        # behaved as the other one's gloss. Pure relabelling of two of the
+        # twelve intents -- every aggregate is unchanged, verified -- but the
+        # NAMES are what the LLM vocabulary experiment shows a model, so they
+        # have to mean what they say.
         key = lambda mn: openness(mn[1], closed)
+    elif rule == "open_field":
+        key = lambda mn: -openness(mn[1], closed)
     else:                                  # evasive
         v = VANTAGES[vantage]
         key = lambda mn: -(abs(mn[1][0] - v[0]) + abs(mn[1][1] - v[1]))

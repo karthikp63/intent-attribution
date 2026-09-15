@@ -926,6 +926,21 @@ Zero pairs are indistinguishable under all 18 legal fixed configurations. On the
 old map the witness was start (3,0), `A/direct` vs `A/open_field`; on a map where
 design is actually allowed to act, no such pair remains.
 
+> **Correction, 2026-09-14 (later): `wall_hug` and `open_field` were inverted.**
+> `best` is a *minimum* over the tie-break key, so `wall_hug` (fewest free
+> neighbours) had to key on `+openness` and `open_field` on `-openness`; they
+> were the other way round, so each rule behaved as the other one's gloss. Found
+> by the vocabulary-proposal harness, which checks that a rule's DSL spec
+> reproduces its implementation — the mismatch was invisible to every numeric
+> check because it is a pure relabelling of two of the twelve intents.
+>
+> Aggregates are unchanged for `passive` and `adaptive` and for all three
+> bounds, as a relabelling must be. **The `random` rows did move** (online
+> 54.2% → 50.7%, design 46.5% → 47.9%, and the misattribute rows likewise),
+> because a stochastic observer's RNG stream is consumed in step with trajectory
+> lengths, so relabelling shifts which random action lands where. The tables
+> below are the corrected set.
+
 ### What survives: a heuristic gap, not a formal one
 
 Faithful subject, n = 48 per cell, enumerated:
@@ -933,11 +948,11 @@ Faithful subject, n = 48 per cell, enumerated:
 ```
 mode                observer   exact ID   |H| final   forced/ep   cost/ep
 online probing      passive       37.5%       2.00        0.00     +0.000
-online probing      random        54.2%       1.86        1.23    -12.965
+online probing      random        50.7%       1.83        1.06    -12.924
 online probing      adaptive     100.0%       1.00        1.12     -1.875
 
 environment design  passive       37.5%       2.00        0.00     +0.000
-environment design  random        46.5%       1.94        1.14     -2.472
+environment design  random        47.9%       1.92        1.10     -2.472
 environment design  adaptive      87.5%       1.12        2.15     -2.000
 ```
 
@@ -988,11 +1003,11 @@ pinnable — it never leaves the model.
 ```
 mode                observer   exact ID   |H| final   sound    misID
 online probing      passive        0.0%       1.00     0.0%   100.0%
-online probing      random         0.0%       1.49     4.9%    71.5%
+online probing      random         0.0%       1.47     4.2%    76.4%
 online probing      adaptive       0.0%       1.00     0.0%   100.0%
 
 environment design  passive        0.0%       1.00     0.0%   100.0%
-environment design  random         0.0%       2.10    11.8%    29.2%
+environment design  random         0.0%       2.11    13.2%    28.5%
 environment design  adaptive       0.0%       1.00     0.0%   100.0%
 ```
 
@@ -1128,6 +1143,102 @@ still uses hard elimination, so `--mu` and the probe rule are unchanged and ever
 committed number is untouched by construction. Posterior-driven *selection* —
 choosing probes to minimise expected posterior entropy rather than expected set
 size — is the natural next step and is not implemented.
+
+## Vocabulary proposal — held-out routing-rule recovery
+
+`python3 vocab.py --selftest` &middot; `--show-prompt` &middot;
+`--backend live --proposer anthropic`
+
+**No recovery rate is reported here.** The harness is built and validated; the
+proposer is not yet measured, because no API key is available in this
+environment. What follows is the experiment design and the harness checks.
+
+### Why this experiment and not the poker one
+
+Proposing intents from a set we already enumerated adds nothing — we can write
+those by hand. The live problem is the one the pilot exposed: posterior mass on
+the intent a real person declared was **0.24 against a 0.20 uniform prior**. The
+vocabulary does not describe what the person was doing, and better elimination
+over a bad vocabulary does not help.
+
+The gridworld is the right testbed because a routing rule is **inspectable**. A
+human can read "keeps to squares with walls around them" and judge it. A 36-cell
+poker policy table cannot be eyeballed.
+
+### The design
+
+Hold one routing rule out of the observer's vocabulary; the subject uses it. The
+vocabulary is then *provably* incomplete — the pilot situation, under conditions
+where we know exactly what is missing. Show the LLM trajectories, ask for a new
+rule, compile it, validate it, and then:
+
+> **Run the proposed rule on episodes the LLM never saw.**
+
+"Is the proposal plausible" is unfalsifiable. "Does it predict held-out
+behaviour" is a real generalisation test, and it is only possible because we hid
+the rule ourselves. **Every rule is held out in turn**, so the result cannot be
+an artifact of which one we picked.
+
+* **Shown:** starts 0–1 x 3 destinations x 2 layouts x 3 observer positions = **36** trajectories
+* **Held back:** starts 2–3, same grid of conditions = **36** trajectories, never shown
+* **Recovery** = the compiled rule reproduces *all 36* unseen trajectories exactly
+
+### The compile target
+
+A routing rule is a tie-break over the moves that make progress — every rule
+takes a shortest path, and they differ only in *which* one. So a proposal
+compiles to an ordered list of `(criterion, direction)` pairs over seven
+criteria (`openness`, `observer_dist`, `momentum`, `row`, `col`,
+`goal_row_align`, `goal_col_align`), with the grid's fixed move order as the
+final tie-break. That makes a proposal executable, **total by construction**, and
+readable by a human as a sentence.
+
+Two prompting styles are compared: **constrained** (emit the DSL as JSON) and
+**free-form** (prose, compiled by a *deterministic* parser — a second LLM pass
+would put the model back in the trust path, which the architecture forbids).
+
+### Harness self-test — the falsifiers, all passing
+
+Run without any model, and inside `sweep.py verify`:
+
+```
+1. DSL expresses each built-in rule EXACTLY        72/72 trajectories, all 4 rules
+   (if it could not, the held-out rule would be unrecoverable by construction)
+2. Episodes DISTINGUISH the four rules             4/4 distinct, shown and held
+   (with the observer's position fixed, `evasive` and `direct` coincide -- caught here)
+3. ORACLE proposer (emits the true spec)           4/4 recovered
+4. NULL proposer (emits an empty rule)             recovers only `direct`, correctly
+5. MALFORMED proposals                             3/3 rejected as ill_formed
+6. Prose compiler on clean descriptions            2/4 exact  (informational)
+```
+
+Check 6 is reported, not gated: it measures the prose→DSL compiler, which is
+part of what the experiment is *for*. It already shows the failure mode — "the
+most open part, avoiding tight corners" fires both the `max` and the `min`
+pattern for openness — and that is a number to report rather than tune away.
+
+### What this harness found in the environment
+
+Check 1 failed on its first run, at 0/24 for `wall_hug` and `open_field`. The
+cause was a genuine bug: the two rules were **inverted relative to their names**
+(see the correction note in the gridworld section). Every numeric check in the
+project had passed over it, because it is a pure relabelling. It surfaced only
+once something had to assert that a rule's *description* matches its *behaviour*
+— which is exactly what a vocabulary experiment requires and what a human
+subject would be shown.
+
+### To measure it
+
+```
+export ANTHROPIC_API_KEY=...        # or GEMINI_API_KEY; ollama needs no key
+python3 vocab.py --backend live --proposer anthropic --n 3
+python3 vocab.py --backend live --proposer ollama --model llama3.1 --n 3
+```
+
+Two providers are compared deliberately: a weaker model producing more
+ill-formed proposals measures **how much reasoning the compile step actually
+demands**. Responses are cached by prompt hash, so a re-run is free and the
+exact bytes behind any future number stay on disk.
 
 ## Commands
 
