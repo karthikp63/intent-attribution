@@ -29,8 +29,12 @@ import json
 import os
 import re
 import sys
+import hashlib
+import time
 import urllib.request
 from collections import Counter
+
+import random
 
 import leduc_intent as L
 
@@ -363,20 +367,136 @@ WOULD explain this behaviour, described in plain English as a complete policy.
 """
 
 
-# ---------------------------------------------------------------- backends
+# ---------------------------------------------------------------- proposers
+#
+# One interface, several providers. The key comes from the environment only --
+# never a flag, never a file in the repo. Every response is cached to disk by a
+# hash of (provider, model, prompt), so a re-run costs nothing, a crash loses
+# nothing, and the exact bytes a number was computed from stay on disk.
 
-def api_call(prompt, model, max_tokens=1500):
-    key = os.environ.get("ANTHROPIC_API_KEY")
-    if not key:
-        sys.exit("ANTHROPIC_API_KEY is not set; use --backend fixture")
-    body = json.dumps({"model": model, "max_tokens": max_tokens,
-                       "messages": [{"role": "user", "content": prompt}]}).encode()
-    req = urllib.request.Request(
-        "https://api.anthropic.com/v1/messages", data=body,
-        headers={"content-type": "application/json", "x-api-key": key,
-                 "anthropic-version": "2023-06-01"})
-    with urllib.request.urlopen(req) as r:
-        return json.loads(r.read())["content"][0]["text"]
+CACHE_DIR = "fixtures/cache"
+
+
+def _cache_path(provider, model, prompt):
+    h = hashlib.sha256(f"{provider}\x00{model}\x00{prompt}".encode()).hexdigest()[:24]
+    return os.path.join(CACHE_DIR, f"{provider}-{h}.json")
+
+
+class Proposer:
+    """Base: caching, retry, and truncation detection are shared by every provider."""
+
+    name = "base"
+    env_key = None
+
+    def __init__(self, model, max_tokens=4096, retries=4, use_cache=True):
+        self.model, self.max_tokens = model, max_tokens
+        self.retries, self.use_cache = retries, use_cache
+        self.key = os.environ.get(self.env_key) if self.env_key else None
+        if self.env_key and not self.key:
+            raise SystemExit(f"{self.env_key} is not set; use --backend fixture")
+
+    def _post(self, prompt):
+        raise NotImplementedError
+
+    def ask(self, prompt):
+        """-> (text, truncated). Cached, retried, and never silently truncated."""
+        path = _cache_path(self.name, self.model, prompt)
+        if self.use_cache and os.path.exists(path):
+            with open(path) as f:
+                d = json.load(f)
+            return d["text"], d["truncated"]
+        last = None
+        for attempt in range(self.retries):
+            try:
+                text, truncated = self._post(prompt)
+                os.makedirs(CACHE_DIR, exist_ok=True)
+                with open(path, "w") as f:
+                    json.dump({"provider": self.name, "model": self.model,
+                               "prompt": prompt, "text": text,
+                               "truncated": truncated}, f, indent=2)
+                return text, truncated
+            except Exception as e:                     # noqa: BLE001 - provider-agnostic
+                last = e
+                if attempt < self.retries - 1:
+                    time.sleep(2 ** attempt)
+        raise RuntimeError(f"{self.name} failed after {self.retries} attempts: {last}")
+
+
+class Anthropic(Proposer):
+    name, env_key = "anthropic", "ANTHROPIC_API_KEY"
+
+    def _post(self, prompt):
+        body = json.dumps({"model": self.model, "max_tokens": self.max_tokens,
+                           "messages": [{"role": "user", "content": prompt}]}).encode()
+        req = urllib.request.Request(
+            "https://api.anthropic.com/v1/messages", data=body,
+            headers={"content-type": "application/json", "x-api-key": self.key,
+                     "anthropic-version": "2023-06-01"})
+        with urllib.request.urlopen(req, timeout=120) as r:
+            d = json.loads(r.read())
+        return d["content"][0]["text"], d.get("stop_reason") == "max_tokens"
+
+
+class Gemini(Proposer):
+    name, env_key = "gemini", "GEMINI_API_KEY"
+
+    def _post(self, prompt):
+        url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
+               f"{self.model}:generateContent?key={self.key}")
+        body = json.dumps({"contents": [{"parts": [{"text": prompt}]}],
+                           "generationConfig": {"maxOutputTokens": self.max_tokens}}).encode()
+        req = urllib.request.Request(url, data=body,
+                                     headers={"content-type": "application/json"})
+        with urllib.request.urlopen(req, timeout=120) as r:
+            d = json.loads(r.read())
+        cand = d["candidates"][0]
+        text = "".join(p.get("text", "") for p in cand["content"]["parts"])
+        return text, cand.get("finishReason") == "MAX_TOKENS"
+
+
+class Ollama(Proposer):
+    """Local, so no key. Host from OLLAMA_HOST, default localhost."""
+    name, env_key = "ollama", None
+
+    def _post(self, prompt):
+        host = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")
+        body = json.dumps({"model": self.model, "prompt": prompt, "stream": False,
+                           "options": {"num_predict": self.max_tokens}}).encode()
+        req = urllib.request.Request(host.rstrip("/") + "/api/generate", data=body,
+                                     headers={"content-type": "application/json"})
+        with urllib.request.urlopen(req, timeout=300) as r:
+            d = json.loads(r.read())
+        return d["response"], d.get("done_reason") == "length"
+
+
+PROVIDERS = {"anthropic": Anthropic, "gemini": Gemini, "ollama": Ollama}
+DEFAULT_MODEL = {"anthropic": "claude-opus-5", "gemini": "gemini-2.5-pro",
+                 "ollama": "llama3.1"}
+
+
+# ------------------------------------------- real contradiction histories
+#
+# The repair case needs observations the vocabulary genuinely cannot explain.
+# These are drawn from a seeded out_of_model run rather than invented, so the
+# prompt describes something that actually happened.
+
+def contradiction_cases(n=6, seed=1, hands=600):
+    rng, orng = random.Random(seed), random.Random(seed + 10 ** 6)
+    state = {"refutations": 0}
+    seen, out = set(), []
+    for k in range(hands):
+        r = L.play_hand("adaptive", rng, hand_no=k + 1, subject="misfit:out_of_model",
+                        state=state, orng=orng)
+        if not r["contradiction"]:
+            continue
+        key = (tuple(r["history"]), r["subject_card"])
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({"hist": list(r["history"]), "card": r["subject_card"]})
+        if len(out) >= n:
+            break
+    return out
 
 
 def load_fixture(path):
@@ -462,7 +582,9 @@ def run(fixture, backend, model, n_api):
     res = []
     results_gap.clear()
     for item in fixture["constrained"]:
-        table, err = compile_constrained(item["table"])
+        table, err = compile_constrained(item.get("table", {}))
+        if item.get("truncated"):
+            err = "response truncated by max_tokens -- not a model failure"
         cat, why = classify(table, err, None)
         results_gap[item["name"]] = _undetermined(table)
         res.append((cat, item["name"], why))
@@ -473,7 +595,9 @@ def run(fixture, backend, model, n_api):
     res = []
     results_gap.clear()
     for item in fixture["freeform"]:
-        table, err = compile_freeform(item["text"])
+        table, err = compile_freeform(item.get("text", ""))
+        if item.get("truncated"):
+            err = "response truncated by max_tokens -- not a model failure"
         cat, why = classify(table, err, None)
         results_gap[item["name"]] = _undetermined(table)
         res.append((cat, item["name"], why))
@@ -490,7 +614,9 @@ def run(fixture, backend, model, n_api):
     results_gap.clear()
     for item in kept:
         hist, card = tuple(item["hist"]), item["card"]
-        table, err = compile_freeform(item["text"])
+        table, err = compile_freeform(item.get("text", ""))
+        if item.get("truncated"):
+            err = "response truncated by max_tokens -- not a model failure"
         obs = observations_for(hist, card)
         cat, why = classify(table, err, obs)
         results_gap[item["name"]] = _undetermined(table)
@@ -514,31 +640,88 @@ def run(fixture, backend, model, n_api):
     print("=" * 74)
 
 
+def live_run(provider, model, n, no_cache):
+    """Generate proposals from a real model. All three strategies, including
+    REPAIR -- which the previous version defined a prompt for and never called,
+    so the only scientifically interesting case silently reported n = 0."""
+    P = PROVIDERS[provider](model or DEFAULT_MODEL[provider], use_cache=not no_cache)
+    fx = {"provenance": {"model": P.model, "provider": provider,
+                         "how": "live API via proposer.py", "n_requested": n},
+          "constrained": [], "freeform": [], "repair": []}
+    truncated = 0
+
+    for i in range(n):
+        raw, tr = P.ask(CONSTRAINED_PROMPT)
+        truncated += tr
+        m = re.search(r"\{.*\}", raw, re.S)
+        entry = {"name": f"c{i}", "truncated": tr}
+        try:
+            entry["table"] = json.loads(m.group(0)) if m else {}
+        except json.JSONDecodeError as e:
+            entry["table"] = {}
+            entry["parse_error"] = str(e)
+        fx["constrained"].append(entry)
+
+        raw, tr = P.ask(FREEFORM_PROMPT)
+        truncated += tr
+        fx["freeform"].append({"name": f"f{i}", "text": raw, "truncated": tr})
+
+    for j, case in enumerate(contradiction_cases(n=min(n, 6))):
+        hist, card = tuple(case["hist"]), case["card"]
+        prompt = REPAIR_PROMPT.format(observed=serialise(hist, card))
+        raw, tr = P.ask(prompt)
+        truncated += tr
+        fx["repair"].append({"name": f"r{j}", "text": raw, "truncated": tr,
+                             "hist": case["hist"], "card": card})
+
+    fx["provenance"]["truncated_responses"] = truncated
+    os.makedirs("fixtures", exist_ok=True)
+    out = f"fixtures/{provider}_run.json"
+    with open(out, "w") as f:
+        json.dump(fx, f, indent=2)
+    print(f"wrote {out}  ({truncated} truncated responses)")
+    return fx
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--backend", default="fixture", choices=["fixture", "api"])
-    ap.add_argument("--fixture", default="fixtures/proposals.json")
-    ap.add_argument("--model", default="claude-opus-5")
-    ap.add_argument("--n", type=int, default=8, help="proposals per strategy (api backend)")
+    ap.add_argument("--backend", default="fixture",
+                    choices=["fixture", "live"],
+                    help="fixture: replay a recorded run; live: call a model")
+    ap.add_argument("--proposer", default="anthropic", choices=sorted(PROVIDERS),
+                    help="provider for --backend live; key from the environment only")
+    ap.add_argument("--fixture", default=None,
+                    help="path to a recorded run to score")
+    ap.add_argument("--model", default=None)
+    ap.add_argument("--n", type=int, default=8, help="proposals per strategy")
+    ap.add_argument("--no-cache", action="store_true",
+                    help="bypass the on-disk response cache")
     args = ap.parse_args()
 
-    if args.backend == "api":
-        fx = {"provenance": {"model": args.model, "how": "live API"},
-              "constrained": [], "freeform": [], "repair": []}
-        for i in range(args.n):
-            raw = api_call(CONSTRAINED_PROMPT, args.model)
-            m = re.search(r"\{.*\}", raw, re.S)
-            try:
-                fx["constrained"].append({"name": f"c{i}", "table": json.loads(m.group(0)) if m else {}})
-            except json.JSONDecodeError as e:
-                fx["constrained"].append({"name": f"c{i}", "table": {"__unparseable__": str(e)}})
-            fx["freeform"].append({"name": f"f{i}", "text": api_call(FREEFORM_PROMPT, args.model)})
-        json.dump(fx, open("fixtures/api_run.json", "w"), indent=2)
-        print("wrote fixtures/api_run.json")
-        run(fx, args.backend, args.model, args.n)
-    else:
-        run(load_fixture(args.fixture), args.backend, args.model, args.n)
+    if args.backend == "live":
+        fx = live_run(args.proposer, args.model, args.n, args.no_cache)
+        run(fx, "live", fx["provenance"]["model"], args.n)
+        return
+
+    if not args.fixture:
+        print(__doc__)
+        print("\nNo recorded run supplied and no live run requested.\n")
+        print("STATUS: pipeline built and validated against ground truth; the")
+        print("proposer itself is NOT yet measured. All 7 built-in Leduc intents")
+        print("compile to total, legal 36-cell tables:\n")
+        for name_, t in BUILT_IN.items():
+            err = check_total(t)
+            print(f"  {name_:<14} {'OK' if err is None else err}")
+        print(f"\n  decision cells per policy: {len(CELLS)}")
+        print("\nTo measure a real rejection rate:")
+        print("  export ANTHROPIC_API_KEY=...   # or GEMINI_API_KEY; ollama needs none")
+        print("  python3 proposer.py --backend live --proposer anthropic --n 20")
+        print("\nEarlier drafts reported 12.5%/60%/75% from an in-session fixture.")
+        print("Those measured the author, not a model, and have been withdrawn.")
+        return
+
+    run(load_fixture(args.fixture), "fixture", args.model or "?", args.n)
 
 
 if __name__ == "__main__":

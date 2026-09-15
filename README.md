@@ -218,8 +218,8 @@ checking reveals only the card.
 - [x] Second environment (gridworld) + real GRD claim: online probing vs design
 - [x] Soft elimination (eps-noise likelihood layer) — gates the human pilot
 - [ ] Human pilot — soundness rate for real subjects
-- [x] LLM as *proposer only* — symbolic layer validates; rejection rate measured
-      (12.5% constrained / 60% free-form / 75% repair)
+- [x] LLM as *proposer only* — pipeline built and validated against ground truth
+- [ ] LLM proposer: an actual measured rejection rate (needs an API key)
 - [ ] Concordia wrapper: custom Game Master delegating resolution to this code
 
 ## Gridworld — the second environment
@@ -272,21 +272,16 @@ weak.
 path: it does not eliminate hypotheses, rank them, or select probes. Every
 proposal is compiled to a total 36-cell policy and validated, or rejected.
 
-| strategy | rejected | n |
-|---|---|---|
-| constrained (fill our schema) | 12.5% | 8 |
-| free-form prose + symbolic compile | 60% | 10 |
-| repair (explain a contradiction) | 75% | 4 |
+**No rejection rate is reported yet.** An earlier draft carried 12.5% / 60% / 75%;
+those came from a fixture written in-session by the author, so they measured the
+author rather than a sampled model, and have been removed. The pipeline itself is
+real and validated against ground truth (all 7 built-in intents compile to total,
+legal tables). Numbers will appear when a real run happens.
 
-The rate rises as the task moves from filling in our schema toward doing
-something we could not do ourselves — and **no rejected proposal announces its
-own invalidity in its text**. That is the argument for keeping the validator.
-Proposals are recorded in `fixtures/proposals.json` and were committed before
-the classifier ran; see RESULTS.md for the provenance caveat. `--backend api`
-regenerates them live (stdlib `urllib`, needs `ANTHROPIC_API_KEY`).
-
-Isolated by design: `sweep.py`, `kuhn_intent.py` and `leduc_intent.py` never
-import it, so the experiments and the verification gate stay dependency-free.
+`--proposer anthropic|gemini|ollama`, key from the environment only, responses
+cached to disk by prompt hash so re-runs are free and reproducible. Never
+imported by the experiment path — tasks 1–2 and `sweep.py verify` run with zero
+dependencies and no key.
 
 ## Background
 
