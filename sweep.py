@@ -653,6 +653,29 @@ def grid_selfcheck():
           + ("" if not dupes else f"  DUPLICATES: {dupes}"))
     ok &= not dupes
 
+    # --- the separation bound, machine-checked and pinned ---------------
+    bs, bp, pl, n, nc = GW.static_bound()
+    online = sum(1 for r in GW.all_episodes("adaptive", "online", random.Random(1))
+                 if r["exact"])
+    print(f"  static bound   {nc} fixed configurations x {n} episodes, brute-forced:")
+    print(f"                   best single config   {bs}/{n} = {bs / n:.1%}")
+    print(f"                   best per-start oracle {bp}/{n} = {bp / n:.1%}")
+    print(f"                   pooled-trace bound    {pl}/{n} = {pl / n:.1%}")
+    print(f"                   online adaptive       {online}/{n} = {online / n:.1%}")
+    # Pinned so the separation cannot silently drift if the map is edited.
+    EXPECT = (23, 29, 34, 46)
+    got = (bs, bp, pl, online)
+    if got != EXPECT:
+        print(f"  BOUND DRIFT: expected {EXPECT}, got {got} -- the separation claim "
+              f"in RESULTS.md no longer matches the code")
+    ok &= got == EXPECT
+    ok &= bs <= bp <= pl          # the three bounds must stay nested
+    ok &= online > pl             # the separation itself
+
+    grd = GW.grd_legal_designs()
+    print(f"  GRD constraint faithful GRD (cost-preserving) admits {len(grd)} design(s): "
+          f"{grd}  -- see RESULTS.md, our legal_close is a strict RELAXATION")
+
     print("\n  " + ("PASS" if ok else "FAIL -- gridworld results are not trustworthy"))
     return ok
 

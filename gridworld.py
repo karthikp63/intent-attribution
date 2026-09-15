@@ -406,6 +406,142 @@ def all_episodes(condition, mode, rng, mu=0.0, play_as_fn=None):
 KEYS = ["exact", "H", "sound", "misID", "forced", "cost"]
 
 
+def grd_legal_designs():
+    """Configurations a FAITHFUL GRD designer may produce.
+
+    Keren, Gal & Karpas (ICAPS 2014) do not merely require goals to stay
+    reachable. Their design problem is
+
+        minimize_{A-} (wcd(D_{A\\A-}), |A-|)
+        subject to  for every goal G:  C*_D(G) = C*_{D\\A-}(G)
+
+    -- "as a way of maintaining 'user comfort' in the model we require the
+    solution to preserve the original optimal solution length of all goals."
+    So a removal that merely lengthens a route is ILLEGAL, not just costly.
+
+    Our `legal_close` ("do not shut the last gate") is a strictly weaker
+    relaxation of that. This function reports what the real constraint allows.
+    """
+    base = {(s, k): dist_field(d, ALL_OPEN)[s]
+            for s in STARTS for k, d in DESTS.items()}
+    out = []
+    for c in range(1 << len(GATES)):
+        ok = True
+        for s in STARTS:
+            for k, d in DESTS.items():
+                f = dist_field(d, c)
+                if s not in f or f[s] != base[(s, k)]:
+                    ok = False
+                    break
+            if not ok:
+                break
+        if ok:
+            out.append(c)
+    return out
+
+
+def _passive_episode(start, intent, closed, vantage):
+    """One episode on a layout fixed before it starts, observer silent."""
+    H = tuple(INTENTS)
+    pos, t = start, 0
+    while t < STEP_CAP:
+        m = policy(intent, pos, closed, vantage)
+        H = tuple(i for i in H if policy(i, pos, closed, vantage) == m)
+        if m == "stop":
+            break
+        pos = step(pos, m)
+        t += 1
+    return H
+
+
+def static_bound():
+    """MACHINE-CHECKED upper bounds on exact ID for a fixed layout.
+
+    Brute force, not argument. Returns
+      (best_single, best_per_start, pooled, n, n_configs)
+    with
+      best_single   the best exact-ID achievable by ONE layout+vantage held
+                    fixed for every episode -- what a designer actually picks;
+      best_per_start a strictly MORE permissive designer that may pick a
+                    different layout for each start (an oracle: it is told the
+                    start before choosing). Reported to make the bound
+                    adversarial rather than convenient;
+      pooled        the weaker argument: two intents that agree under EVERY
+                    fixed configuration cannot be separated by any one of them.
+
+    All three bound FIXED layouts only. None of them bounds an observer that
+    reconfigures mid-episode.
+    """
+    configs = [(c, v) for c in range(1 << len(GATES)) if legal_close(c)
+               for v in range(len(VANTAGES))]
+    n = len(STARTS) * len(INTENTS)
+
+    best_single = 0
+    for c, v in configs:
+        hits = sum(1 for s in STARTS for i in INTENTS
+                   if [x for x in _passive_episode(s, i, c, v)] == [i])
+        best_single = max(best_single, hits)
+
+    best_per_start = sum(
+        max(sum(1 for i in INTENTS if [x for x in _passive_episode(s, i, c, v)] == [i])
+            for c, v in configs)
+        for s in STARTS)
+
+    pooled, _ = static_ceiling()
+    return best_single, best_per_start, pooled, n, len(configs)
+
+
+def witness():
+    """The concrete pair behind the separation, regenerated from scratch.
+
+        python3 gridworld.py --witness
+    """
+    s, i1, i2 = (3, 0), ("A", "direct"), ("A", "open_field")
+    print(f"\n  WITNESS: start {s}, {name(i1)} vs {name(i2)}\n")
+    same = True
+    for c in range(1 << len(GATES)):
+        if not legal_close(c):
+            continue
+        for v in range(len(VANTAGES)):
+            t1 = _trace(i1, s, c, v)
+            t2 = _trace(i2, s, c, v)
+            if t1 != t2:
+                same = False
+                print(f"    differ under fixed layout {bin(c)} vantage {v}")
+    print(f"    identical under ALL {len([c for c in range(1 << len(GATES)) if legal_close(c)]) * len(VANTAGES)}"
+          f" fixed configurations: {same}")
+
+    print("\n  Now with an observer that reconfigures mid-episode:\n")
+    print(f"    {'t':>2}  {'observer':<9} {'gates':>6} {'pos':<8} "
+          f"{name(i1):<14} {name(i2):<14}")
+    closed, v, t, pos = ALL_OPEN, 1, 0, s
+    H = tuple(INTENTS)
+    while t < STEP_CAP:
+        a = choose_action(H, pos, closed, v, t, "adaptive", None, 0.0)
+        closed, v = apply_action(a, closed, v)
+        m1, m2 = policy(i1, pos, closed, v), policy(i2, pos, closed, v)
+        flag = "" if m1 == m2 else "   <-- SEPARATED"
+        print(f"    {t:>2}  {a:<9} {bin(closed)[2:]:>6} {str(pos):<8} "
+              f"{m1:<14} {m2:<14}{flag}")
+        if m1 != m2 or m1 == "stop":
+            break
+        H = tuple(x for x in H if policy(x, pos, closed, v) == m1)
+        pos = step(pos, m1)
+        t += 1
+
+
+def _trace(intent, start, closed, vantage):
+    out, pos, t = [], start, 0
+    while t < STEP_CAP:
+        m = policy(intent, pos, closed, vantage)
+        out.append(m)
+        if m == "stop":
+            break
+        pos = step(pos, m)
+        t += 1
+    return out
+
+
 def static_ceiling():
     """Upper bound on exact ID for ANY observer whose layout is fixed for the
     whole episode -- including the best possible environment design.
@@ -479,10 +615,26 @@ def main():
                     help="observer cost weight: minimise E[|H|] + mu * E[cost]")
     ap.add_argument("--seeds", type=int, nargs="+", default=[1, 2, 3])
     ap.add_argument("--map", action="store_true", help="print the grid and exit")
+    ap.add_argument("--witness", action="store_true",
+                    help="regenerate the separation witness pair and exit")
+    ap.add_argument("--bounds", action="store_true",
+                    help="machine-check the static-layout bounds and exit")
     args = ap.parse_args()
 
     if args.map:
         print_map()
+        return
+    if args.witness:
+        witness()
+        return
+    if args.bounds:
+        bs, bp, pl, n, nc = static_bound()
+        print(f"\n  configurations enumerated (layout x vantage): {nc}")
+        print(f"  episodes per configuration:                   {n}")
+        print(f"  best SINGLE fixed configuration : {bs}/{n} = {bs / n:.1%}")
+        print(f"  best per-start (oracle designer): {bp}/{n} = {bp / n:.1%}")
+        print(f"  pooled-trace upper bound        : {pl}/{n} = {pl / n:.1%}")
+        print(f"  GRD-legal designs (cost-preserving): {grd_legal_designs()}")
         return
 
     conds = ["passive", "random", "adaptive"] if args.condition == "all" else [args.condition]

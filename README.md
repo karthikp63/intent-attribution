@@ -244,11 +244,16 @@ and reports them separately.
 
 n = 48 per cell, **enumerated exhaustively** rather than sampled.
 
-**Online probing strictly beats environment design, and provably.** Pooling every
-fixed layout bounds exact ID at 34/48 = 70.8% — an upper bound on any environment
-design. Adaptive online reaches 95.8% by reconfiguring *mid-episode*, separating
-intent pairs that no static layout can. GRD's own constraint is enforced
-literally: you may not shut the last open gate.
+**Online probing beats every fixed layout, machine-checked.** Brute-forcing all
+21 legal configurations: best single layout 47.9%, a per-start *oracle* designer
+60.4%, pooled-trace bound 70.8% — all upper bounds on **fixed layouts only**.
+Adaptive online reaches 95.8% by reconfiguring *mid-episode*. All four numbers
+are pinned in `sweep.py verify`. Witness: `gridworld.py --witness`.
+
+**Caveat on the GRD claim.** Our "may not shut the last gate" rule is a
+*relaxation* of GRD, which requires the optimal cost to every goal to be
+**unchanged**. Under the real constraint this grid admits no redesign at all, so
+we implement a relaxation, not GRD. See RESULTS.md.
 
 ## Soft elimination
 
