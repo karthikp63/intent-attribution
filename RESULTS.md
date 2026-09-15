@@ -750,6 +750,305 @@ Tasks 1–2 and `sweep.py verify` run with zero dependencies and no key;
 `proposer.py` is never imported by the experiment path and uses only stdlib
 `urllib`.
 
+## Gridworld — the second environment, and the first real GRD claim
+
+`python3 gridworld.py --map` &middot; `python3 sweep.py grid`
+
+Poker made "what is a probe?" hard to picture. In a grid it is one sentence:
+**close a corridor and see which way they turn.** It is also the setting the
+goal-recognition-design literature actually uses, which makes this a comparison
+rather than an analogy.
+
+8x8 grid, a wall down column 3 with three gates, four possible starts, three
+destinations, four routing rules. An intent is a **(destination, routing rule)**
+pair — 12 of them. Two intents sharing a destination but routing differently are
+the interesting case, exactly as `trap` and `value_bet` are in poker. Observer
+actions: open or close a gate, or move to a vantage point, each with a cost.
+
+Episodes are **enumerated, not sampled**: every start x every intent = **48 per
+cell**, exhaustively. The environment is deterministic, so only the `random`
+observer varies with the seed; `passive` and `adaptive` have degenerate ranges by
+construction, and 48 is the whole population rather than a sample.
+
+### The honesty gap this closes
+
+We have been citing GRD while doing something weaker. GRD **redesigns the
+environment in advance** so that whichever goal the agent holds becomes evident
+sooner. Everything before this was **online inquiry inside a fixed environment**.
+The grid does both, and they are reported separately and never averaged:
+
+* `--mode online` — the observer acts during the episode.
+* `--mode design` — the observer fixes the layout before the subject starts, then
+  does nothing. This is GRD proper.
+
+> **Correction: our GRD constraint is a RELAXATION, not the real one.** We
+> enforced "you may not shut the last open gate" as a stand-in for GRD's
+> feasibility requirement. Checked against Keren, Gal & Karpas (ICAPS 2014),
+> that is **not** what they require. Their design problem is
+>
+> > minimize<sub>A₋</sub> ( wcd(D<sub>A∖A₋</sub>), |A₋| ) subject to ∀G ∈ 𝒢,
+> > C\*<sub>D</sub>(G) = C\*<sub>D∖A₋</sub>(G)
+>
+> — "as a way of maintaining *user comfort* in the model we require the solution
+> to preserve the original optimal solution length of all goals." A removal that
+> merely *lengthens* a route is **illegal**, not merely costly.
+>
+> In our grid **every** closure lengthens some route (by 2 to 10 steps), so a
+> faithful GRD designer may remove **nothing at all**: the only cost-preserving
+> configuration is the empty one. `gridworld.py --bounds` reports this and the
+> gate prints it on every run. Two consequences, pointing opposite ways:
+>
+> * **The separation is not an artifact of a crippled baseline.** Our design arm
+>   is *more* permissive than GRD, not less — it is allowed closures GRD forbids
+>   outright. Beating it is therefore a conservative result.
+> * **But we cannot claim to implement GRD.** Under the real constraint this grid
+>   is degenerate for design: nothing may be removed, so wcd is unchanged. A
+>   genuine GRD instance needs **redundant equal-length routes**, so that some
+>   closures preserve optimal cost. That is a map change and would move every
+>   committed gridworld number, so it is not done here.
+>
+> A second mismatch worth stating: GRD's objective is **wcd** — how many steps
+> before the *goal* is revealed, over destinations. Ours is exact identification
+> of a (destination, routing rule) intent. Related, not the same quantity.
+
+### Faithful subject (n = 48, exhaustive)
+
+```
+mode                observer   exact ID   |H| final   sound   misID   forced/ep   cost/ep
+online probing      passive       31.2%       2.42     100%    0.0%        0.00    +0.000
+online probing      random        38.2%       2.32     100%    0.0%        1.36   -13.500
+online probing      adaptive      95.8%       1.04     100%    0.0%        6.00    -6.854
+
+environment design  passive       31.2%       2.42     100%    0.0%        0.00    +0.000
+environment design  random        28.5%       2.65     100%    0.0%        0.97    -2.569
+environment design  adaptive      39.6%       2.12     100%    0.0%        0.79    -4.000
+```
+`random` ranges over seeds 1–3: online 33.3–41.7%, design 25.0–35.4%.
+
+### The separation, machine-checked
+
+**Adaptive online probing reaches 95.8% (46/48).**
+
+> **Scope of the bound, stated where the number is.** Every bound below is an
+> upper bound on **fixed layouts only** — a configuration chosen before the
+> episode and held for its duration. **None of them bounds an observer that
+> reconfigures mid-episode**, and the 95.8% is not a counterexample to any of
+> them. The separation claim is exactly: *fixed-layout design cannot exceed
+> these; online inquiry does.*
+
+Brute-forced rather than argued — all **21** legal configurations (7 layouts x 3
+vantages) x 48 episodes, `python3 gridworld.py --bounds`:
+
+```
+best SINGLE fixed configuration   23/48 = 47.9%   <- what a designer actually picks
+best per-start ORACLE designer    29/48 = 60.4%   <- told the start before choosing
+pooled-trace upper bound          34/48 = 70.8%   <- agree-everywhere argument
+--------------------------------------------------
+online adaptive                   46/48 = 95.8%
+```
+
+The three bounds are nested (23 ≤ 29 ≤ 34) and all four numbers are **pinned in
+`sweep.py verify`**, which fails on any drift, so the claim in this file cannot
+come apart from the code.
+
+The middle row is deliberately adversarial: the per-start oracle is *more*
+powerful than any real designer, since it is told the subject's start before
+choosing a layout. It still reaches only 60.4%.
+
+**Our own design arm is weaker than the best fixed layout, and we are not
+updating it.** `choose_design` minimises expected |H| and holds the vantage
+fixed, so it scores **39.6%** where the best fixed configuration scores 47.9%.
+That gap is a property of our design *heuristic*, not of design as such, which is
+why the bound above — not the 39.6% — is what the separation rests on. Changing
+`choose_design` would move a committed number, so it is flagged here rather than
+silently fixed.
+
+### The witness
+
+`python3 gridworld.py --witness` regenerates this from scratch.
+
+Start `(3,0)`, `A/direct` vs `A/open_field`. **Identical under all 21 fixed
+configurations** — the command verifies this exhaustively. Then, against an
+observer that reconfigures:
+
+```
+ t  observer   gates  pos      A/direct   A/open_field
+ 0  close2       100  (3, 0)   S          S
+ 1  close1       110  (4, 0)   N          N
+ ...
+14  wait         110  (3, 2)   N          N
+15  open1        100  (2, 2)   N          S      <-- SEPARATED
+```
+
+Reopening gate 1 changes how open the neighbouring cells are, and the two rules
+score openness oppositely. No static layout produces that moment; a sequence
+does. One concrete pair is the whole claim: there exist intents that online
+inquiry separates and that no fixed layout can.
+
+Adaptive also costs *less* than random (−6.85 vs −13.50) while identifying far
+better: the cost is in choosing which gate to close, not in closing many.
+
+### The poker result replicates — it was not a poker artifact
+
+Same construction as the consistent misattributor: the subject declares one
+intent and faithfully plays **another**, chosen to be the most pinnable. It never
+leaves the model.
+
+```
+mode                observer   exact ID   |H| final   sound    misID   forced/ep
+online probing      passive        0.0%       1.04     0.0%    97.9%        0.00
+online probing      random         0.0%       2.34    13.2%    54.9%        1.69
+online probing      adaptive       0.0%       1.00     0.0%   100.0%        6.81
+
+environment design  passive        0.0%       1.04     0.0%    97.9%        0.00
+environment design  random         0.0%       2.59    18.1%    34.7%        0.90
+environment design  adaptive       0.0%       1.04     0.0%    97.9%        1.69
+```
+
+**Adaptive online probing is misattributed on 100% of episodes** — 48 of 48, every
+one ending on exactly one intent, always the wrong one. The ordering from poker
+holds exactly: adaptive worst, passive next, **random safest** (54.9%) purely
+because it learns least. Competence is the vulnerability, in a second environment
+with a different action space, different intent structure, and no hidden
+information at all.
+
+That is the point of having two environments. The misattribution result is a
+property of **exact elimination over intents-as-policies**, not of poker.
+
+### Shared code, and what could not be shared
+
+`core.py` holds the per-episode record schema, every metric computed from it,
+seed aggregation, Wilson intervals and table rendering — both environments import
+it. What is **not** shared is the elimination step and the selection rule: each is
+a few lines over an environment-specific `policy()` and action set, and the
+recursion that scores actions has to walk that environment's own tree.
+Abstracting them behind callbacks would have added more indirection than it
+removed and obscured the thing a reader needs to check — that the two
+environments really do apply the same rule. `sweep.py verify` holds them honest
+instead.
+
+### Environment self-checks (in the gate)
+
+`sweep.py verify` now fails if any of these fail, because no gridworld number
+means anything otherwise:
+
+```
+reachability   every destination from every start, every legal layout: 84/84
+termination    longest episode 19 steps (cap 30); failed to arrive: 0
+distinctness   12/12 intents behave distinctly
+```
+
+## Soft elimination — the likelihood layer (blocking for human data)
+
+`python3 soft.py --verify` &middot; `--sweep` &middot; `--pilot pilot.json`
+
+Exact elimination assumes the subject is inside the model. Real people are not:
+the 20-hand pilot scored soundness **9/20** with no deception involved. Under
+hard elimination one move off the declared policy either removes the true intent
+or empties the set, so human data scored that way measures the subject's
+sloppiness, not the observer's capability.
+
+    P(a | intent, card, node) = (1 - eps) * [policy says a] + eps / |legal(node)|
+
+The card is **profiled out (max), not marginalised (sum)** — hard elimination
+asks *"is there some card under which this intent explains what we saw"*, which
+is an existential. Summing instead weights an intent by how many cards happen to
+fit it; that broke the eps = 0 collapse on 1511 of 5400 episodes before the
+falsifier caught it. Card facts stay hard; only behaviour is noisy.
+
+### Metric definitions, chosen to collapse exactly at eps = 0
+
+At eps = 0 every consistent hypothesis has likelihood 1 and every inconsistent
+one 0, so the posterior is uniform over exactly the hard survivors.
+
+| metric | soft definition | at eps = 0 |
+|---|---|---|
+| `\|H\| eff` | perplexity, exp(entropy) of the intent posterior | uniform over k → **k** |
+| `exact ID` | MAP intent is declared **and** carries mass ≥ τ = 0.9 | mass 1/k ≥ 0.9 iff **k = 1** |
+| `misID` | MAP carries mass ≥ τ and is not declared | same argument |
+| `sound` | declared intent is in the 95% HPD set | HPD = full support → **survived** |
+| `contra` | hard support empty — *no intent explains this without invoking noise* | unchanged |
+
+`contra` deliberately keeps its hard definition at every eps: at eps > 0 nothing
+is strictly impossible, so a posterior version would be vacuous, and "refuted
+unless the subject slipped" is the quantity we actually want.
+
+**The falsifier passes.** Every metric recomputed through the likelihood layer at
+eps = 0, compared per episode against what the hard run recorded, across both
+games, all three conditions, every subject type, seeds 1–3:
+
+```
+episodes checked:                  9000
+episodes where ANY metric differs:    0
+```
+
+This now runs inside `sweep.py verify`.
+
+### What noise does (Leduc, adaptive, n = 3000 per cell)
+
+The subject really slips at rate `eps_true`; the observer scores at `eps_model`.
+
+```
+eps_true |      scored eps=0 (hard)        |   scored eps=eps_true (matched)
+         |  exact  |H|eff   sound  contra  |  exact  |H|eff   sound  contra
+    0.00 |  37.0%    2.66  100.0%    0.0%  |  37.0%    2.66  100.0%    0.0%
+    0.02 |  36.1%    2.62   97.5%    0.4%  |  36.2%    2.81   98.0%    0.4%
+    0.05 |  34.9%    2.57   93.6%    1.1%  |  20.1%    3.00   96.8%    1.1%
+    0.10 |  32.6%    2.50   87.8%    2.1%  |   0.7%    3.31   96.8%    2.1%
+    0.20 |  27.7%    2.32   75.2%    4.1%  |   0.0%    3.91   96.9%    4.1%
+    0.35 |  23.0%    2.09   60.2%    7.2% |   0.0%    4.82   97.1%    7.2%
+    0.50 |  18.1%    1.89   46.9%   10.0% |   0.0%    5.62   97.2%   10.0%
+```
+
+The `eps_true = 0` row reproduces itself in both columns, which is the sweep's
+own falsifier (the replay is verified identical to the original hand in 500/500).
+
+**Read the two columns against each other.** Hard scoring keeps *reporting*
+confident identifications as the subject gets noisier — 18.1% exact ID even at
+eps = 0.5 — while its soundness collapses to **46.9%**. It is confidently naming
+an intent in a fifth of hands while having discarded the true one in half of
+them. Matched scoring holds soundness at **~97% at every noise level** and pays
+for it in honest uncertainty: exact ID goes to zero and |H| eff rises to 5.62.
+
+That is the trade, and it is the right one for human data. Hard elimination does
+not become *uncertain* under noise, it becomes *wrong*.
+
+### Re-scoring the real pilot — 20 human hands
+
+```
+   eps    sound    exact   |H| eff   contra   mean mass on declared
+  0.00    45.0%     5.0%      1.75     0.0%                   0.242
+  0.05    70.0%     5.0%      2.16     0.0%                   0.241
+  0.10   100.0%     0.0%      2.49     0.0%                   0.240
+  0.20   100.0%     0.0%      3.08     0.0%                   0.237
+  0.50   100.0%     0.0%      4.31     0.0%                   0.224
+```
+
+**How much of the 9/20 was brittleness? Almost none of it.** Soundness climbs
+from 45% to 100% by eps = 0.1 — but look at the last column. The posterior mass
+on the intent the person actually declared sits at **≈ 0.24 at every eps**, and
+Kuhn's uniform prior over five intents is **0.20**. After a complete hand, the
+declared intent carries barely more weight than it started with.
+
+So softening fixes the *metric* — the observer stops claiming the truth was
+eliminated — without making the truth any better supported. The signal in this
+person's behaviour about their stated intent is close to absent. That is a much
+more serious finding for the human pilot than brittleness would have been, and
+it is the number to design the study around.
+
+**Caveats, because n is tiny.** 20 hands, one person, and **16 of 20
+declarations were `bluff`** — a badly unbalanced sample from a self-chosen menu.
+This is suggestive, not conclusive, and it is an argument for assigning intents
+rather than letting participants pick.
+
+### Scope limit
+
+The likelihood layer is a **scoring** layer. The observer's action selection
+still uses hard elimination, so `--mu` and the probe rule are unchanged and every
+committed number is untouched by construction. Posterior-driven *selection* —
+choosing probes to minimise expected posterior entropy rather than expected set
+size — is the natural next step and is not implemented.
+
 ## Commands
 
 ```
