@@ -283,6 +283,13 @@ cached to disk by prompt hash so re-runs are free and reproducible. Never
 imported by the experiment path — tasks 1–2 and `sweep.py verify` run with zero
 dependencies and no key.
 
+## Presentation
+
+`docs/probing.html` — a standalone page for the group: what a probe is (the
+forced-decision decomposition and a worked Kuhn node), what probing buys, the
+information/chip frontier, and the case where it makes the observer confidently
+wrong. Published as an artifact; open the file directly or serve the directory.
+
 ## Background
 
 - Keren, Gal & Karpas, *Goal Recognition Design*, ICAPS 2014 — worst-case

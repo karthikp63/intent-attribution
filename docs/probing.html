@@ -147,6 +147,26 @@ thead th { font-family: "IBM Plex Mono", monospace; font-size: .66rem; letter-sp
            text-transform: uppercase; color: var(--ink-3); font-weight: 500; }
 td.n { font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; }
 
+/* ---------- worked node ---------- */
+.node { display: flex; flex-direction: column; gap: var(--s1); }
+.node-row { display: flex; align-items: baseline; gap: var(--s3); padding: var(--s2) var(--s2);
+            border-radius: 3px; flex-wrap: wrap; }
+.node-row.chosen { background: var(--surface-sunk); box-shadow: inset 2px 0 0 var(--adaptive); }
+.node-act { font-family: "IBM Plex Mono", monospace; font-size: .95rem; font-weight: 600;
+            min-width: 4.2rem; }
+.node-val { font-size: 1.05rem; font-weight: 600; min-width: 4rem; }
+.node-row.chosen .node-val { color: var(--adaptive); }
+.node-note { font-size: .84rem; color: var(--ink-2); flex: 1 1 14rem; }
+.node-out { list-style: none; margin: 0; padding: 0 0 0 calc(var(--s2) + var(--s3));
+            display: flex; flex-direction: column; gap: var(--s1); }
+.node-out li { font-size: .84rem; color: var(--ink-2); display: flex; gap: .5rem;
+               align-items: baseline; flex-wrap: wrap; }
+.node-out .arrow { color: var(--ink-3); }
+.node-out li.pin { color: var(--ink); }
+.pin-tag { font-family: "IBM Plex Mono", monospace; font-size: .64rem; letter-spacing: .1em;
+           text-transform: uppercase; color: var(--surface); background: var(--adaptive);
+           padding: .1rem .38rem; border-radius: 2px; }
+
 /* ---------- callout ---------- */
 .turn {
   background: var(--surface-sunk); border-left: 3px solid var(--critical);
@@ -180,7 +200,7 @@ code { font-family: "IBM Plex Mono", monospace; font-size: .86em;
   <header class="masthead">
     <span class="eyebrow">Yale ROSE &middot; adaptive counterfactual inquiry</span>
     <h1>What probing buys</h1>
-    <p class="lede">An observer watches someone play poker and tries to work out <em>what they are trying to do</em>. It can sit back and watch, or it can act — choosing its own moves to make the answer show itself. This is what that choice is worth, and where it turns against you.</p>
+    <p class="lede">An observer watches someone play poker and tries to work out <em>what they are trying to do</em>. It can sit back and watch, or it can <em>probe</em> — make a move that forces the subject to answer something. This is what a probe is, what it buys, and where it turns against you.</p>
 
     <dl class="facts">
       <div class="fact"><dt>Games</dt><dd>Kuhn &middot; Leduc hold'em</dd></div>
@@ -191,9 +211,64 @@ code { font-family: "IBM Plex Mono", monospace; font-size: .86em;
     </dl>
   </header>
 
-  <!-- ============ ACT 1 ============ -->
+  <!-- ============ ACT 1 : WHAT A PROBE IS ============ -->
   <section class="act">
-    <div class="act-head"><span class="act-n">01</span><h2>Probing works</h2></div>
+    <div class="act-head"><span class="act-n">01</span><h2>What a probe actually is</h2></div>
+    <p class="claim">A probe is the observer making a move that forces the subject into a decision they would otherwise never face — and choosing that move so their answer splits the intent set as far as possible.</p>
+
+    <p class="col">In Leduc the subject makes <strong>two decisions per hand on their own</strong>: they open each betting round. A passive observer checks and calls through, so those two moves are all it ever sees. It never asks the subject anything. Betting or raising creates a third decision — fold, call, or raise — that did not exist before.</p>
+
+    <figure>
+      <div class="panel">
+        <div class="panel-head">
+          <h3>Questions asked, and what each answer was worth</h3>
+          <span class="key" style="color:var(--ink-3)">Leduc &middot; 2,000 hands &middot; faithful subject</span>
+        </div>
+        <div class="charts-2">
+          <div class="chart-scroll"><div id="c-forced"></div></div>
+          <div class="chart-scroll"><div id="c-peranswer"></div></div>
+        </div>
+        <figcaption>Left: subject decisions that exist <em>only</em> because the observer acted. Right: intents eliminated by a single forced answer. Random and adaptive ask almost the same number of questions — the difference is entirely in which ones.</figcaption>
+      </div>
+    </figure>
+
+    <p class="col"><strong>This is the cleanest isolation of what &ldquo;adaptive&rdquo; buys.</strong> Random and adaptive force nearly the same number of answers — <span class="num mono">1,569</span> against <span class="num mono">1,530</span>. Holding the act of probing constant, each adaptive answer cuts <span class="num mono">1.39</span> intents against random's <span class="num mono">1.22</span>. Same number of questions; better-chosen ones. That residual is the selection rule and nothing else.</p>
+
+    <p class="col">A confirming signal sits in where the information comes from. The share of elimination contributed by the showdown card reveal — pure watching, not asking — is <span class="num mono">21%</span> for the passive observer but only <span class="num mono">9%</span> for the adaptive one. <strong>The adaptive observer has shifted its information source from watching to asking.</strong></p>
+
+    <figure>
+      <div class="panel">
+        <div class="panel-head">
+          <h3>One probe, in full</h3>
+          <span class="key" style="color:var(--ink-3)">Kuhn &middot; subject checked &middot; observer holds K</span>
+        </div>
+        <div class="node">
+          <div class="node-row">
+            <span class="node-act">check</span>
+            <span class="node-val num">3.571</span>
+            <span class="node-note">hand ends at showdown — the subject never acts again</span>
+          </div>
+          <div class="node-row chosen">
+            <span class="node-act">bet</span>
+            <span class="node-val num">2.429</span>
+            <span class="node-note">the subject must now answer fold&#8209;or&#8209;call</span>
+          </div>
+          <ul class="node-out">
+            <li><span class="mono">folds</span> <span class="arrow">&rarr;</span> <span class="mono">bluff, give_up, value_bet</span></li>
+            <li><span class="mono">calls holding&nbsp;Q</span> <span class="arrow">&rarr;</span> <span class="mono">trap, value_bet</span></li>
+            <li class="pin"><span class="mono">calls holding&nbsp;J</span> <span class="arrow">&rarr;</span> <span class="mono">trap</span> <span class="pin-tag">pinned</span></li>
+          </ul>
+        </div>
+        <figcaption>Expected number of intents still standing at the end of the hand, under each observer action. Four intents are alive at this node: <span class="mono">bluff</span>, <span class="mono">give_up</span>, <span class="mono">trap</span>, <span class="mono">value_bet</span>.</figcaption>
+      </div>
+    </figure>
+
+    <p class="col">Only <span class="mono">trap</span> checks a jack and then calls a bet. <strong>That fact is invisible unless someone bets.</strong> The observer spends a chip to manufacture the one situation in which <span class="mono">trap</span> is obliged to distinguish itself — a counterfactual made actual. Checking would have revealed the card and nothing about what the subject was trying to do.</p>
+  </section>
+
+  <!-- ============ ACT 2 ============ -->
+  <section class="act">
+    <div class="act-head"><span class="act-n">02</span><h2>Probing works</h2></div>
     <p class="claim">Choosing moves to expose intent roughly <strong>triples</strong> exact identification in Kuhn and adds ten points in Leduc — against a subject whose behaviour the intent model actually describes.</p>
 
     <p class="col">Three observers see identical deals. <span class="mono">passive</span> never probes: it checks and calls through. <span class="mono">random</span> acts arbitrarily. <span class="mono">adaptive</span> picks the move that minimises the expected number of intents left standing. Nothing else differs.</p>
@@ -236,7 +311,7 @@ code { font-family: "IBM Plex Mono", monospace; font-size: .86em;
 
   <!-- ============ ACT 2 ============ -->
   <section class="act">
-    <div class="act-head"><span class="act-n">02</span><h2>And it is free</h2></div>
+    <div class="act-head"><span class="act-n">03</span><h2>And it is free</h2></div>
     <p class="claim">Probing looked like it cost half a chip a hand. Almost all of that was waste: a small chip-awareness term buys back the loss <em>and</em> identifies slightly better.</p>
 
     <p class="col">In Leduc the information-only observer loses <span class="num mono">−0.509</span> chips a hand, because a round-two probe is a four-chip bet. Weighting its objective by <span class="mono">μ</span> — minimise expected intents left, minus <span class="mono">μ</span> times expected chips — traces the frontier between knowing and winning.</p>
@@ -259,7 +334,7 @@ code { font-family: "IBM Plex Mono", monospace; font-size: .86em;
 
   <!-- ============ ACT 3 ============ -->
   <section class="act">
-    <div class="act-head"><span class="act-n">03</span><h2>Until the vocabulary doesn't fit</h2></div>
+    <div class="act-head"><span class="act-n">04</span><h2>Until the vocabulary doesn't fit</h2></div>
     <p class="claim">Everything above holds only while the subject's behaviour is generated by one of the intents we wrote down. When it isn't, probing stops helping — and then starts actively hurting.</p>
 
     <p class="col">Goal recognition design assumes the actor's behaviour comes from one of the modelled goals. Real subjects are not in that set — rarely because they conceal, mostly because a finite menu of intents will not cover what a person actually does. They pick the nearest label, change their mind, misread the option, or play badly. <strong>All of it looks identical to the observer.</strong></p>
@@ -297,6 +372,11 @@ code { font-family: "IBM Plex Mono", monospace; font-size: .86em;
     <span class="eyebrow">Where this leaves us</span>
     <h2 style="margin-top:var(--s2)">Probing is the right rule, and it is not enough</h2>
     <p class="col" style="margin-top:var(--s3)">The observer in act 3 is not being lied to. It is being told the truth by someone whose label and behaviour have come apart, and it answers with precision. Nothing in the elimination framework fixes this: the conclusion is <em>correct about the policy</em> and wrong only about the name.</p>
+
+    <div class="turn" style="border-left-color:var(--adaptive);margin-top:var(--s3)">
+      <span class="eyebrow" style="color:var(--adaptive)">On the literature</span>
+      <p>Everything above is <strong>online inquiry inside a fixed environment</strong>: the observer chooses its move, it cannot redesign the game. Goal recognition design does the stronger thing — it modifies the environment <em>in advance</em> so that whichever goal an agent holds becomes evident sooner. A companion gridworld now implements both and reports them separately, which is what lets us make an actual GRD claim rather than an analogy.</p>
+    </div>
 
     <div class="openq">
       <div>
@@ -341,7 +421,8 @@ code { font-family: "IBM Plex Mono", monospace; font-size: .86em;
 
   // ---------- horizontal bar chart ----------
   function barChart(mount, opt) {
-    var data = opt.data, max = opt.max, unit = opt.unit || "%";
+    var data = opt.data, max = opt.max;
+    var unit = (opt.unit === undefined) ? "%" : opt.unit;
     var W = 380, padL = 74, padR = 46, padT = 30, padB = 26;
     var rowH = 38, gap = 12;
     var H = padT + data.length * rowH + padB;
@@ -385,7 +466,23 @@ code { font-family: "IBM Plex Mono", monospace; font-size: .86em;
     });
   }
 
-  // ---------- act 1 ----------
+  // ---------- act 1: what a probe is ----------
+  barChart(document.getElementById("c-forced"), {
+    title: "answers the observer forced", max: 1800, unit: "", data: [
+      { k: "passive",  v: 0 },
+      { k: "random",   v: 1569 },
+      { k: "adaptive", v: 1530 }
+    ]
+  });
+  barChart(document.getElementById("c-peranswer"), {
+    title: "intents cut per forced answer", max: 1.6, unit: "", data: [
+      { k: "passive",  v: 0 },
+      { k: "random",   v: 1.22 },
+      { k: "adaptive", v: 1.39 }
+    ]
+  });
+
+  // ---------- act 2 ----------
   barChart(document.getElementById("c-exact-kuhn"), {
     title: "Kuhn poker", max: 45, data: [
       { k: "passive",  v: 6.8,  lo: 6.6,  hi: 7.0,  r: "6.6–7.0" },
@@ -401,7 +498,7 @@ code { font-family: "IBM Plex Mono", monospace; font-size: .86em;
     ]
   });
 
-  // ---------- act 3 ----------
+  // ---------- act 4 ----------
   barChart(document.getElementById("c-mis-kuhn"), {
     title: "Kuhn poker", max: 100, data: [
       { k: "passive",  v: 25.5, r: "24.8–26.2" },
