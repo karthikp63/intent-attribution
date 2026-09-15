@@ -695,12 +695,14 @@ def grid_selfcheck():
 # it immediately.
 
 REQUIRED_SECTIONS = [
+    "## Goal recognition and intent recognition are different problems",
+    "## Confident misattribution",
     "## Kuhn (", "## Leduc (", "## Task 2: cost-aware misfit generator",
     "## Task 3: cost-aware observer", "## Hardening the misattribution result",
     "## Task 4c: a deception-aware observer", "## The consistent misattributor",
     "## Gridworld", "## Soft elimination", "## LLM as proposer", "## Commands",
 ]
-RESULTS_LINE_FLOOR = 950
+RESULTS_LINE_FLOOR = 1100
 
 
 def document_check(path="RESULTS.md"):
@@ -715,7 +717,15 @@ def document_check(path="RESULTS.md"):
     print(f"  {path}: {lines} lines, {len(REQUIRED_SECTIONS) - len(missing)}"
           f"/{len(REQUIRED_SECTIONS)} required sections present")
     if missing:
-        print("  MISSING SECTIONS: " + "; ".join(missing))
+        import difflib
+        present = [ln for ln in text.splitlines() if ln.startswith("## ")]
+        print("  MISSING SECTIONS:")
+        for h in missing:
+            near = difflib.get_close_matches(h, present, n=1, cutoff=0.6)
+            hint = f"   closest actual heading: {near[0]!r}" if near else \
+                   "   no similar heading found -- the section really is gone"
+            print(f"    wanted {h!r}")
+            print(f"   {hint}")
     if lines < RESULTS_LINE_FLOOR:
         print(f"  LINE-COUNT FLOOR BREACHED: {lines} < {RESULTS_LINE_FLOOR}. If this "
               f"shrinkage is intended, lower RESULTS_LINE_FLOOR in sweep.py in the "
