@@ -1451,19 +1451,64 @@ generalise. The evidence is sufficient and the proposer simply fails to fit it.
 These are *different kinds of failure*, and merging them would have manufactured
 a unified story the measurements do not support.
 
-### Where this leaves the component
+### LLM branch: CLOSED
 
-The best measured recovery is **37.5% [27.7%, 48.5%]** (gpt-5-mini, constrained,
-untuned) or **32.5% [25.7%, 40.1%]** (gpt-4o-mini, constrained, tuned), on a task
-where the ground truth is a one-line tie-break rule *we designed to be
-recoverable*, shown 36 trajectories, with the answer expressible in a 7-criterion
-vocabulary we also designed.
+**Verdict: the component does not work well enough to build on, and the reason
+is now understood rather than guessed.**
 
-Against that, roughly a third is not a component to build on yet. Two of four
-rules barely recover at any setting. **It should not be presented as working.**
-What it is good for right now is exactly what it did here: a falsifiable test
-harness that produced a real number, an architecture finding, and a measured
-statement about where the failures live.
+What was measured, across 836 proposals from two models, two prompt styles and
+one tuning iteration:
+
+| | |
+|---|---|
+| best binary recovery | **37.5%** [27.7%, 48.5%] (gpt-5-mini, constrained, untuned) |
+| best after tuning a weak model | 32.5% [25.7%, 40.1%] (gpt-4o-mini, constrained, v2) |
+| proposals that fit the data they were shown | **22.2%** |
+| proposals that fit-but-fail-to-generalise | **0** |
+| rules beating the no-rule floor | **2 of 4** |
+
+And the task was made as easy as we could honestly make it: ground truth is a
+one-line tie-break rule *we designed to be recoverable*, shown 36 trajectories,
+expressible in a 7-criterion vocabulary *we also designed*, with the answer
+usually a single criterion.
+
+**The failure is fitting, not generalising.** That is the one genuinely useful
+thing this branch produced. Every proposal that fit the evidence also
+generalised, so nothing here is about induction or sample size; 77.8% of
+proposals simply contradict trajectories the model was handed.
+
+Three findings worth keeping even though the component is shelved:
+
+1. **The symbolic validator is load-bearing, but only in a specific regime.**
+   For the weak model the schema was actively harmful (0.0% constrained vs 14.4%
+   free-form) because it invited over-specification the validator had no grounds
+   to reject — 160/160 proposals used exactly four criteria against true specs of
+   length 0–1. For the stronger model the schema helps slightly. "The symbolic
+   layer protects the LLM from itself" is true where the model cannot use the
+   schema, and not a general property.
+2. **Prompt design and model capability were near-substitutes here.** Fixing the
+   prompt took gpt-4o-mini from 0.0% to 32.5%; switching model took it from 0.0%
+   to 37.5% with no prompt change. Untuned numbers would have ranked the two
+   models as incomparable.
+3. **Graded scoring does not rescue a weak binary score.** The distribution is
+   bimodal — proposals are exactly right or substantially wrong, with the 90–99%
+   band nearly empty — and on two of four rules they are on average *worse than
+   proposing no rule at all*.
+
+**What we are not doing, and why.** Not tuning further: the eval has four
+possible answers and n=80 per cell, so past one honest iteration improvement is
+indistinguishable from fitting the test. Not building the repair case (propose a
+*sixth* intent when a contradiction fires): it is strictly harder and has no
+ground truth, so it could not be measured this way at all.
+
+**Why this branch existed, restated.** The LLM was never the goal. It was one
+candidate fix for a problem we have **not confirmed exists** — that our intent
+vocabulary does not match real people — and that suspicion rests on a single
+20-hand session in which the subject declared `bluff` 16 times out of 20. The
+right next move is not a better proposer. It is to find out whether the problem
+is real.
+
+**Everything now waits on the pilot.**
 
 ## Gridworld human pilot — instrument built, NOT run
 

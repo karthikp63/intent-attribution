@@ -283,16 +283,16 @@ propose a replacement from trajectories, compiles it to an executable policy,
 and then **runs it on 36 episodes the LLM never saw**. Recovery = predicts
 held-out behaviour exactly. Every rule is held out in turn.
 
-**Measured.** Best recovery is **37.5%** [27.7%, 48.5%] (gpt-5-mini,
-constrained, untuned prompt) or **32.5%** [25.7%, 40.1%] (gpt-4o-mini,
-constrained, tuned prompt), on a task whose ground truth is a one-line rule we
-designed to be recoverable. Two of four held-out rules barely recover at any
-setting. **Not yet a component to build on** — see RESULTS.md for the full
-table, the prompt-iteration history, and the architecture finding.
+**Measured, and CLOSED.** Best recovery **37.5%** [27.7%, 48.5%]. Only 22.2% of
+proposals fit the trajectories they were *shown*, while **0** fit-but-fail-to-
+generalise: the bottleneck is fitting the evidence, not induction. Two of four
+rules never beat the no-rule floor. **Shelved** — see RESULTS.md for the full
+table, the tuning history, and the diagnosis.
 
-Two results worth the space: the constrained 0/160 on gpt-4o-mini was the
-*model*, not the task (gpt-5-mini gets 37.5% on the identical prompt); and
-fixing the prompt closed almost the whole gap between the two models.
+Kept from it: the symbolic validator is load-bearing only where the model cannot
+use the schema (for the weak model the schema was *harmful*); prompt design and
+model capability were near-substitutes; and graded scoring does not rescue a weak
+binary score, because the distribution is bimodal rather than near-miss.
 
 It has already paid for itself: check 1 failed on first run and exposed that
 `wall_hug` and `open_field` were inverted relative to their names — invisible to
