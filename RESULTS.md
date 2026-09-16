@@ -1224,6 +1224,35 @@ handed the schema.** Giving it the schema invites over-specification the
 validator has no grounds to reject. That is a measured architecture claim, not
 an inferred one.
 
+### Cross-model: the 0% is a property of the model, not the task
+
+gpt-5-mini, **n = 80 per style**, **prompt v1 — the same untuned prompt**
+(verified: all 160 cached prompts are v1).
+
+```
+prompt v1 (untuned)   ill_formed  inconsistent  duplicate  novel_valid   RECOVERED
+gpt-4o-mini  constr.        0.6%         98.1%       1.2%         0.0%   0/160 =  0.0%  [0.0%,  2.3%]
+gpt-5-mini   constr.        0.0%         38.8%      23.8%        37.5%  30/80  = 37.5%  [27.7%, 48.5%]
+
+gpt-4o-mini  free-form     45.0%         20.6%      20.0%        14.4%  23/160 = 14.4%  [9.8%, 20.6%]
+gpt-5-mini   free-form     33.8%          8.8%      25.0%        32.5%  26/80  = 32.5%  [23.2%, 43.4%]
+```
+
+**The constrained 0% was gpt-4o-mini, not the task.** Handed the identical
+schema and the identical prompt, gpt-5-mini recovers 37.5%. Whatever the
+constrained path is asking for, it is askable — the weaker model simply could not
+do it.
+
+This also reframes the whole exercise: for the weak model, the schema was
+*harmful* (0.0% constrained vs 14.4% free-form); for the stronger model it is
+mildly *helpful* (37.5% vs 32.5%). The architecture claim above holds only in the
+regime where the model cannot use the schema properly.
+
+`gpt-5` (207s/call) and `gemini-3.5-flash` (100s/call) were **dropped**: neither
+reaches n = 20 in usable wall time, and an n = 3 number cannot support a claim.
+gpt-5-mini (61s/call) was chosen as the cross-model comparison for the best
+information per unit of wall time.
+
 ### Tuning: one iteration, both numbers reported
 
 Two failure modes were visible in v1, and v2 targets both: it says fewer criteria
@@ -1262,6 +1291,39 @@ criterion, v2 made `direct` — whose true spec is empty — unreachable in the
 constrained path too (0/40, all classified duplicate). v2 fixed two failure
 modes and created a third. **One iteration only**; we stopped there deliberately,
 because the eval is small and tuning until the number looks good is fitting to it.
+
+### Prompting the weak model ≈ using the strong one
+
+```
+constrained recovery      gpt-4o-mini            gpt-5-mini
+prompt v1 (untuned)    0/160 =  0.0% [0.0, 2.3]   30/80 = 37.5% [27.7, 48.5]
+prompt v2 (tuned)     52/160 = 32.5% [25.7,40.1]  not run
+```
+
+Fixing the prompt took gpt-4o-mini from 0.0% to **32.5%**; switching to a
+stronger model took it from 0.0% to **37.5%** with no prompt change. The
+intervals overlap heavily. **Almost the entire gap between the two models on
+this task was prompt design** — the weak model was not failing to reason about
+routing rules, it was over-specifying and inverting directions because the
+prompt invited both.
+
+That is a cheerful result for anyone deploying this, and a cautionary one for
+anyone benchmarking: the untuned v1 number would have ranked these two models as
+incomparable (0.0% vs 37.5%) when one prompt change closes most of it.
+
+### Where this leaves the component
+
+The best measured recovery is **37.5% [27.7%, 48.5%]** (gpt-5-mini, constrained,
+untuned) or **32.5% [25.7%, 40.1%]** (gpt-4o-mini, constrained, tuned), on a task
+where the ground truth is a one-line tie-break rule *we designed to be
+recoverable*, shown 36 trajectories, with the answer expressible in a 7-criterion
+vocabulary we also designed.
+
+Against that, roughly a third is not a component to build on yet. Two of four
+rules barely recover at any setting. **It should not be presented as working.**
+What it is good for right now is exactly what it did here: a falsifiable test
+harness that produced a real number, an architecture finding, and a measured
+statement about where the failures live.
 
 ## Gridworld human pilot — instrument built, NOT run
 

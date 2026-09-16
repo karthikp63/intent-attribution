@@ -283,10 +283,16 @@ propose a replacement from trajectories, compiles it to an executable policy,
 and then **runs it on 36 episodes the LLM never saw**. Recovery = predicts
 held-out behaviour exactly. Every rule is held out in turn.
 
-**No recovery rate yet** — needs an API key. The harness is validated
-(DSL expresses all built-ins 72/72; episodes distinguish all 4 rules; oracle
-proposer 4/4; null and malformed proposals correctly rejected) and runs inside
-`sweep.py verify` with no key.
+**Measured.** Best recovery is **37.5%** [27.7%, 48.5%] (gpt-5-mini,
+constrained, untuned prompt) or **32.5%** [25.7%, 40.1%] (gpt-4o-mini,
+constrained, tuned prompt), on a task whose ground truth is a one-line rule we
+designed to be recoverable. Two of four held-out rules barely recover at any
+setting. **Not yet a component to build on** — see RESULTS.md for the full
+table, the prompt-iteration history, and the architecture finding.
+
+Two results worth the space: the constrained 0/160 on gpt-4o-mini was the
+*model*, not the task (gpt-5-mini gets 37.5% on the identical prompt); and
+fixing the prompt closed almost the whole gap between the two models.
 
 It has already paid for itself: check 1 failed on first run and exposed that
 `wall_hug` and `open_field` were inverted relative to their names — invisible to
