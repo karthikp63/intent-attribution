@@ -196,7 +196,15 @@ def serialise_episode(start, dest_key, closed, vantage, moves):
             f"observer at {G.VANTAGES[vantage]}:  {seq}")
 
 
-def build_prompt(rule, known_rules, constrained):
+# Prompt versions. v1 is the UNTUNED baseline and is never edited: the reported
+# numbers for it must stay reproducible. v2 targets the two failure modes v1
+# produced, both measured rather than guessed:
+#   (a) OVER-SPECIFICATION -- 160/160 constrained proposals used exactly 4
+#       criteria against true specs of length 0 or 1. "At most 4" read as a
+#       target, and the lead criterion was almost always a goal-directed one
+#       already implied by the shortest-path constraint.
+#   (b) INVERTED DIRECTION -- `evasive` proposed as observer_dist MIN.
+def build_prompt(rule, known_rules, constrained, version=1):
     shown = episodes(SHOWN_STARTS)
     body = "\n".join(serialise_episode(s, d, c, v,
                                        trajectory_builtin(rule, s, d, c, v))
@@ -222,6 +230,9 @@ None of those explains the trajectories below. Here is what this subject did:
 
 Propose ONE new routing rule that explains this behaviour.
 """
+    if version == 2:
+        return head + (_V2_CONSTRAINED if constrained else _V2_FREEFORM)
+
     if constrained:
         opts = "\n".join(f"  - {k}: {v}" for k, v in CRITERION_GLOSS.items())
         return head + f"""
@@ -240,6 +251,60 @@ At most 4 entries.
     return head + """
 Describe the rule in one or two plain English sentences -- the way you would
 explain it to another person. Do not use JSON.
+"""
+
+
+_V2_CONSTRAINED = """
+Express the rule as an ordered list of tie-break criteria. When several shortest
+steps are tied, the first criterion is applied, then the second among whatever is
+still tied, and so on.
+
+Available criteria:
+  - openness: how many of the four neighbours of the square are free
+  - observer_dist: how far the square is from the observer, in steps
+  - momentum: whether the step continues in the same direction as the last one
+  - row: how far down the grid the square is
+  - col: how far right the square is
+  - goal_row_align: how close the square's row already is to the destination's row
+  - goal_col_align: how close the square's column already is to the destination's column
+"direction" is "max" or "min".
+
+THREE THINGS THAT MATTER:
+
+1. USE AS FEW CRITERIA AS POSSIBLE. Almost every rule of this kind needs exactly
+   ONE. Adding criteria you do not need makes the rule WRONG, because each extra
+   one changes which step is taken whenever the earlier ones tie. Do not pad the
+   list.
+
+2. THE SHORTEST PATH IS ALREADY ENFORCED. The subject is guaranteed to take a
+   shortest route; you are only explaining how it chooses BETWEEN equally short
+   steps. So criteria about getting closer to the destination
+   (goal_row_align, goal_col_align) explain nothing and will make your answer
+   wrong. Do not use them unless the behaviour cannot be explained otherwise.
+
+3. GET THE DIRECTION RIGHT. "max" picks the LARGEST value, "min" the SMALLEST.
+   Check yourself against one of the trajectories above before answering.
+
+First write ONE sentence stating the rule in plain words, naming the direction
+explicitly (for example: "prefers the square with FEWER free neighbours").
+Then, on a new line, output ONLY the JSON list, for example:
+  [{"criterion": "openness", "direction": "min"}]
+"""
+
+_V2_FREEFORM = """
+Describe the rule in one or two plain English sentences -- the way you would
+explain it to another person. Do not use JSON.
+
+TWO THINGS THAT MATTER:
+
+1. The subject is ALREADY guaranteed to take a shortest route. You are only
+   explaining how it chooses BETWEEN equally short steps, so do not describe it
+   as "heading toward the goal" -- that is true of every subject and explains
+   nothing. Name the ONE thing that distinguishes this subject.
+
+2. State the DIRECTION explicitly and unambiguously -- whether it prefers MORE
+   or LESS of whatever it is you have identified. Check your sentence against
+   one of the trajectories above before answering.
 """
 
 
@@ -321,7 +386,7 @@ def classify(spec, err, rule, known_rules):
 
 # ------------------------------------------------------------------ runner
 
-def run(ask, label, n=1, rules=None, styles=(True, False)):
+def run(ask, label, n=1, rules=None, styles=(True, False), version=1):
     """`ask(prompt, nonce) -> (text, truncated)`. Holds each rule out in turn.
 
     `n` is the number of independent draws per (held-out rule, prompt style).
@@ -333,8 +398,8 @@ def run(ask, label, n=1, rules=None, styles=(True, False)):
         known = [r for r in G.RULES if r != rule]
         for constrained in styles:
             for k in range(n):
-                prompt = build_prompt(rule, known, constrained)
-                text, truncated = ask(prompt, nonce=k)
+                prompt = build_prompt(rule, known, constrained, version)
+                text, truncated = ask(prompt, nonce=(version, k))
                 if truncated:
                     rows.append((rule, constrained, "ill_formed",
                                  "response truncated", False))

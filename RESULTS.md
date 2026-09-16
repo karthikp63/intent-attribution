@@ -1144,101 +1144,124 @@ committed number is untouched by construction. Posterior-driven *selection* —
 choosing probes to minimise expected posterior entropy rather than expected set
 size — is the natural next step and is not implemented.
 
-## Vocabulary proposal — held-out routing-rule recovery
+## Vocabulary proposal — held-out routing-rule recovery: MEASURED
 
-`python3 vocab.py --selftest` &middot; `--show-prompt` &middot;
-`--backend live --proposer anthropic`
+`python3 vocab.py --selftest` (no key) &middot;
+`python3 run_recovery.py <provider> <model> <n> [style] [prompt-version]`
 
-**No recovery rate is reported here.** The harness is built and validated; the
-proposer is not yet measured, because no API key is available in this
-environment. What follows is the experiment design and the harness checks.
+Hold one routing rule **out** of the observer's vocabulary. The subject uses it,
+so the vocabulary is *provably* incomplete — the pilot situation under conditions
+where we know exactly what is missing. Show the LLM 36 trajectories, ask for a
+new rule, compile it to an executable policy, then:
 
-### Why this experiment and not the poker one
+> **Run the proposal on 36 episodes the LLM never saw. Recovery = predicts
+> held-out behaviour exactly.**
 
-Proposing intents from a set we already enumerated adds nothing — we can write
-those by hand. The live problem is the one the pilot exposed: posterior mass on
-the intent a real person declared was **0.24 against a 0.20 uniform prior**. The
-vocabulary does not describe what the person was doing, and better elimination
-over a bad vocabulary does not help.
+Every rule is held out in turn. Responses are cached by
+`(provider, model, prompt, nonce, max_tokens)`, so re-runs are free and
+reproducible.
 
-The gridworld is the right testbed because a routing rule is **inspectable**. A
-human can read "keeps to squares with walls around them" and judge it. A 36-cell
-poker policy table cannot be eyeballed.
+> **These numbers could not have been trusted a week ago.** The rule glosses
+> shown to the LLM are the *corrected* ones — `wall_hug` and `open_field` were
+> implemented backwards until 2026-09-14. Before that fix the experiment would
+> have been asking a model to recover a rule whose description was wrong, and
+> scoring it against behaviour that contradicted the words. `glosses.py` now
+> asserts the glosses against behaviour in the gate.
 
-### The design
+### Headline: the untuned baseline
 
-Hold one routing rule out of the observer's vocabulary; the subject uses it. The
-vocabulary is then *provably* incomplete — the pilot situation, under conditions
-where we know exactly what is missing. Show the LLM trajectories, ask for a new
-rule, compile it, validate it, and then:
-
-> **Run the proposed rule on episodes the LLM never saw.**
-
-"Is the proposal plausible" is unfalsifiable. "Does it predict held-out
-behaviour" is a real generalisation test, and it is only possible because we hid
-the rule ourselves. **Every rule is held out in turn**, so the result cannot be
-an artifact of which one we picked.
-
-* **Shown:** starts 0–1 x 3 destinations x 2 layouts x 3 observer positions = **36** trajectories
-* **Held back:** starts 2–3, same grid of conditions = **36** trajectories, never shown
-* **Recovery** = the compiled rule reproduces *all 36* unseen trajectories exactly
-
-### The compile target
-
-A routing rule is a tie-break over the moves that make progress — every rule
-takes a shortest path, and they differ only in *which* one. So a proposal
-compiles to an ordered list of `(criterion, direction)` pairs over seven
-criteria (`openness`, `observer_dist`, `momentum`, `row`, `col`,
-`goal_row_align`, `goal_col_align`), with the grid's fixed move order as the
-final tie-break. That makes a proposal executable, **total by construction**, and
-readable by a human as a sentence.
-
-Two prompting styles are compared: **constrained** (emit the DSL as JSON) and
-**free-form** (prose, compiled by a *deterministic* parser — a second LLM pass
-would put the model back in the trust path, which the architecture forbids).
-
-### Harness self-test — the falsifiers, all passing
-
-Run without any model, and inside `sweep.py verify`:
+gpt-4o-mini, **n = 160 per style** (4 held-out rules x 40 draws).
 
 ```
-1. DSL expresses each built-in rule EXACTLY        72/72 trajectories, all 4 rules
-   (if it could not, the held-out rule would be unrecoverable by construction)
-2. Episodes DISTINGUISH the four rules             4/4 distinct, shown and held
-   (with the observer's position fixed, `evasive` and `direct` coincide -- caught here)
-3. ORACLE proposer (emits the true spec)           4/4 recovered
-4. NULL proposer (emits an empty rule)             recovers only `direct`, correctly
-5. MALFORMED proposals                             3/3 rejected as ill_formed
-6. Prose compiler on clean descriptions            2/4 exact  (informational)
+prompt v1 (untuned)   ill_formed  inconsistent  duplicate  novel_valid   RECOVERED
+constrained                 0.6%         98.1%       1.2%         0.0%   0/160 =  0.0%  [0.0%,  2.3%]
+free-form                  45.0%         20.6%      20.0%        14.4%  23/160 = 14.4%  [9.8%, 20.6%]
 ```
 
-Check 6 is reported, not gated: it measures the prose→DSL compiler, which is
-part of what the experiment is *for*. It already shows the failure mode — "the
-most open part, avoiding tight corners" fires both the `max` and the `min`
-pattern for openness — and that is a number to report rather than tune away.
+**Constrained recovery is 0/160.** At n=20 that looked like it might be small
+sample; at n=160 the interval is [0.0%, 2.3%] and it is a real result. Handing
+the model the exact schema produced *nothing usable*, 160 times.
 
-### What this harness found in the environment
+**Free-form at 14.4% [9.8%, 20.6%]** — and note this is *lower* than the 25%
+[11.2%, 46.9%] the n=20 pilot suggested. The wide early interval was optimistic,
+which is the argument for n=160.
 
-Check 1 failed on its first run, at 0/24 for `wall_hug` and `open_field`. The
-cause was a genuine bug: the two rules were **inverted relative to their names**
-(see the correction note in the gridworld section). Every numeric check in the
-project had passed over it, because it is a pure relabelling. It surfaced only
-once something had to assert that a rule's *description* matches its *behaviour*
-— which is exactly what a vocabulary experiment requires and what a human
-subject would be shown.
-
-### To measure it
+### The pooled number hides most of the story
 
 ```
-export ANTHROPIC_API_KEY=...        # or GEMINI_API_KEY; ollama needs no key
-python3 vocab.py --backend live --proposer anthropic --n 3
-python3 vocab.py --backend live --proposer ollama --model llama3.1 --n 3
+recovery by held-out rule (v1 free-form)      direct  wall_hug  open_field  evasive
+                                               1/40      1/40        6/40    15/40
+                                               2.5%      2.5%       15.0%    37.5%
 ```
 
-Two providers are compared deliberately: a weaker model producing more
-ill-formed proposals measures **how much reasoning the compile step actually
-demands**. Responses are cached by prompt hash, so a re-run is free and the
-exact bytes behind any future number stay on disk.
+Recovery is **concentrated in `evasive`**. Two of the four rules essentially never
+recover. Reporting 14.4% alone would have implied a uniform capability that does
+not exist.
+
+One cause is ours, not the model's: **`direct` is unrecoverable by the free-form
+path by construction.** Its true spec is the *empty* list, and `compile_prose`
+requires at least one recognised criterion, so it can never emit it. Any `direct`
+"recovery" in the free-form column is an artifact.
+
+### Does the symbolic compiler explain the free-form advantage? Yes, measurably
+
+```
+gpt-4o-mini, all draws              CONSTRAINED    FREE-FORM
+criteria the model asserted (mean)         4.00    n/a (prose)
+criteria surviving compilation             4.00           1.25
+spec-length distribution               {4: 160}   {1:67, 2:20, 3:1}
+proposals discarded entirely                  1             72
+```
+
+True specs are length **0 or 1**. **160 of 160** constrained proposals used
+exactly four criteria — the model read "at most 4" as a target — and the
+compiler filtered *none* of them, because four valid criterion names are
+syntactically perfect. The free-form path averages 1.25 because the compiler can
+only emit what it recognises, and it discarded 72 proposals outright.
+
+**The symbolic layer protects the LLM from itself — but only when the LLM is not
+handed the schema.** Giving it the schema invites over-specification the
+validator has no grounds to reject. That is a measured architecture claim, not
+an inferred one.
+
+### Tuning: one iteration, both numbers reported
+
+Two failure modes were visible in v1, and v2 targets both: it says fewer criteria
+are better and that most rules need exactly one; it states that the shortest-path
+constraint is already enforced so goal-directed criteria explain nothing; and it
+asks for the rule in words, naming the direction, before the JSON.
+
+```
+                        v1 (untuned)                 v2 (tuned)
+constrained    0/160 =  0.0% [0.0%,  2.3%]   52/160 = 32.5% [25.7%, 40.1%]
+free-form     23/160 = 14.4% [9.8%, 20.6%]   14/160 =  8.8% [5.3%, 14.2%]
+```
+
+**Both failure modes were prompt design, not model capability**, and the
+mechanism is visible:
+
+```
+constrained, gpt-4o-mini        v1        v2
+mean criteria per spec        4.00      1.00
+length distribution       {4: 159}  {1: 160}
+leads with a goal_* criterion  58%        1%
+observer_dist lead = "max"    0/62     80/95
+```
+
+Over-specification went from universal to absent. Direction inversion went from
+**0/62 correct to 80/95 (84%)**. The same model, with the same information,
+produced a 32.5% recovery rate once the prompt stopped inviting both errors.
+
+**Tuning helped constrained and HURT free-form** (14.4% → 8.8%), and the ordering
+flipped: v1 had free-form ahead, v2 has constrained ahead. The v2 free-form
+instructions push toward naming one distinguishing feature, which appears to
+trade recall for a higher duplicate rate (46.2%).
+
+**A trade-off v2 introduced, stated plainly:** by insisting on at least one
+criterion, v2 made `direct` — whose true spec is empty — unreachable in the
+constrained path too (0/40, all classified duplicate). v2 fixed two failure
+modes and created a third. **One iteration only**; we stopped there deliberately,
+because the eval is small and tuning until the number looks good is fitting to it.
 
 ## Gridworld human pilot — instrument built, NOT run
 

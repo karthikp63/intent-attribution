@@ -12,6 +12,8 @@ import vocab as V
 
 prov_name, model, n = sys.argv[1], sys.argv[2], int(sys.argv[3])
 style = sys.argv[4] if len(sys.argv) > 4 else "both"
+version = int(sys.argv[5]) if len(sys.argv) > 5 else 1
 styles = {"constrained": (True,), "freeform": (False,), "both": (True, False)}[style]
 prov = P.PROVIDERS[prov_name](model)
-V.run(prov.ask, f"{prov_name} / {model} [{style}]", n=n, styles=styles)
+V.run(prov.ask, f"{prov_name} / {model} [{style}] prompt-v{version}",
+      n=n, styles=styles, version=version)
