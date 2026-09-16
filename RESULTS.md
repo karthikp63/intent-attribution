@@ -1311,6 +1311,70 @@ That is a cheerful result for anyone deploying this, and a cautionary one for
 anyone benchmarking: the untuned v1 number would have ranked these two models as
 incomparable (0.0% vs 37.5%) when one prompt change closes most of it.
 
+### Graded score: does "recovered" being all-or-nothing understate it?
+
+`python3 rescore.py` — re-scores every cached proposal; no API calls. Binary
+recovery is kept unchanged so committed numbers stay comparable.
+
+Agreement is measured by **teacher forcing**: at each state the subject actually
+visited under the true rule, ask what the proposal would do there. Rolling the
+proposal out instead would let one early mistake cascade into a different route
+and score near zero — that measures divergence amplification, not agreement.
+
+**The floor is the whole story.** Most steps have exactly one shortest option, so
+every rule agrees on them for free:
+
+```
+held-out rule    empty spec, raw   empty spec, contested
+direct                   100.0%                  100.0%     <- `direct` IS the empty spec
+wall_hug                  85.7%                   62.5%
+open_field                90.5%                   78.6%
+evasive                   92.1%                   83.1%
+```
+
+The empty spec is "shortest path, no rule at all". Raw agreement cannot go below
+~86%, so quoting it would turn *learned nothing* into *90% accurate*. Only
+**contested** agreement — states with two or more shortest steps, where a routing
+rule has any content — discriminates. Everything below is contested.
+
+```
+model / prompt / style          n    BINARY   contested mean   contested distribution
+gpt-4o-mini v1 constrained    160      0.0%            19.7%   <25:110 25-50:36 50-75:11 75-90:2 100%:0
+gpt-4o-mini v1 free-form      160     14.4%            64.2%   <25:10 25-50:14 50-75:28 75-90:9 90-:4 100%:23
+gpt-4o-mini v2 constrained    160     32.5%            72.8%   <25:1 25-50:15 50-75:80 75-90:12 90-:0 100%:52
+gpt-4o-mini v2 free-form      160      8.8%            55.8%   <25:13 25-50:41 50-75:42 75-90:13 90-:5 100%:14
+gpt-5-mini  v1 constrained     80     37.5%            64.5%   <25:12 25-50:18 50-75:10 75-90:7 90-:1 100%:32
+gpt-5-mini  v1 free-form       80     32.5%            74.0%   <25:0 25-50:17 50-75:2 75-90:4 90-:4 100%:26
+```
+
+**The answer is no — the graded metric does not rescue the component.** Two
+things say so.
+
+**1. The distribution is bimodal, not clustered near the top.** Proposals are
+either *exactly right* or *substantially wrong*; the 90–99% band is almost empty
+everywhere (0, 4, 0, 5, 1, 4 across the six conditions). gpt-5-mini free-form is
+the clearest case: 17 proposals in 25–50%, 26 at exactly 100%, and 2 in between.
+So the honest statement is **not** "recovers the gist but not the exact ordering".
+It is closer to "gets it or does not".
+
+**2. On two of the four rules, proposals are on average WORSE than proposing
+nothing.** Against the no-rule floor:
+
+```
+                          gpt-4o-mini v2 constr.      gpt-5-mini v1 free-form
+rule          floor       contested   vs floor        contested   vs floor
+direct       100.0%           64.9%   -35.1           89.6%       -10.4
+wall_hug      62.5%           64.3%   +1.8            31.2%       -31.3
+open_field    78.6%           71.5%   -7.1            91.1%       +12.5
+evasive       83.1%           90.7%   +7.6           100.0%       +16.9
+```
+
+`evasive` and `open_field` beat the floor. `direct` and `wall_hug` do not — a
+proposal for them is, on average, *less* predictive of the subject's behaviour
+than assuming no rule at all. Those are exactly the two rules with near-zero
+binary recovery, so the graded view confirms the concentration rather than
+softening it.
+
 ### Where this leaves the component
 
 The best measured recovery is **37.5% [27.7%, 48.5%]** (gpt-5-mini, constrained,

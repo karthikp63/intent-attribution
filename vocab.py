@@ -353,6 +353,60 @@ def compile_prose(text):
     return compile_spec([list(p) for p in spec])
 
 
+# ------------------------------------------------------- graded agreement
+#
+# Binary recovery -- "predicts EVERY move across 36 unseen episodes" -- cannot
+# tell "clueless two thirds of the time" from "close nearly always, exact a
+# third of the time". Those are very different findings. This adds a graded
+# score alongside it; the binary one is kept unchanged so the committed numbers
+# stay comparable.
+#
+# Measured by TEACHER FORCING, not by rolling the proposal out: at each state
+# the subject actually visited under the true rule, ask what the proposal would
+# do there. Rolling out instead would make a single early mistake cascade into
+# a wholly different route and score near zero, which measures divergence
+# amplification rather than agreement.
+
+def move_agreement(spec, rule, eps):
+    """-> (hit, total, contested_hit, contested_total), teacher-forced.
+
+    RAW AGREEMENT HAS A VERY HIGH FLOOR AND IS NEARLY USELESS ALONE. Most steps
+    have exactly one shortest option, so every rule agrees on them for free: the
+    EMPTY spec -- "shortest path, default tie-break", i.e. no rule at all --
+    already scores 85.7-92.1% raw on the held-out episodes. Reporting raw
+    agreement without that baseline would turn "learned nothing" into "90%
+    accurate".
+
+    So the informative number is CONTESTED agreement: only the states where two
+    or more shortest steps exist, which is exactly where a routing rule has any
+    content. Both are returned; both are reported.
+    """
+    hit = tot = chit = ctot = 0
+    for start, dest_key, closed, vantage in eps:
+        dest = G.DESTS[dest_key]
+        pos, last = start, None
+        for _ in range(G.STEP_CAP):
+            if pos == dest:
+                break
+            d = G.dist_field(dest, closed)
+            here = d.get(pos)
+            steps = [] if here is None else [
+                m for m, n in G.neighbours(pos, closed)
+                if d.get(n, 1 << 20) == here - 1]
+            truth = G.policy((dest_key, rule), pos, closed, vantage)
+            got = rule_move(spec, pos, closed, vantage, dest, last)
+            ok = truth == got
+            tot += 1
+            hit += ok
+            if len(steps) >= 2:
+                ctot += 1
+                chit += ok
+            last = truth                      # follow the TRUE trajectory
+            pos = G.step(pos, truth)
+    return hit, tot, chit, ctot
+
+
+
 # -------------------------------------------------------------- validation
 
 def classify(spec, err, rule, known_rules):
