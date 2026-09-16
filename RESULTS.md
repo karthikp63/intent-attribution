@@ -1314,6 +1314,117 @@ identifiers or minors would each lose the exemption; none are in this design.
 **Two or three participants is an instrument shakedown, not a study.** At n = 3
 we can detect "mass sits at the prior" and nothing about a population.
 
+## The specificity hypothesis — tested and refuted
+
+`python3 specificity.py`
+
+The pilot instrument shipped with a pre-registered prediction: a subject
+following a **permissive** intent would be systematically attributed to a more
+**specific** one, because the specific intent assigns probability 1 to a move the
+permissive one spreads across its tie set. If it held, it would have been the
+structural explanation for misattribution that this project has been missing, and
+a bias with a known direction might be correctable.
+
+**It does not hold.** Tested against data we already had, before anyone was
+recruited.
+
+### Permissiveness, defined before looking
+
+For an intent `i`, `perm(i)` = the mean, over reachable decision states, of the
+number of actions the intent leaves open **before** any arbitrary tie-break.
+`perm = 1` means the intent fully determines behaviour. Chosen over
+action-distribution entropy because it is exactly the quantity the mechanism
+names — mass is spread over `|acceptable|` — and because if it is 1 everywhere
+the mechanism provably cannot operate, which makes the claim falsifiable.
+
+### (a) The mechanism cannot operate in any committed run
+
+```
+                     elimination code   pilot likelihood
+gridworld, 12 intents    1.000 (all)      1.127 – 1.431
+Leduc, 7 intents         1.000 (all)      n/a
+spread                       0.000              0.304
+```
+
+Every committed misattribution number — poker and gridworld alike — comes from
+code where policies are **total and deterministic**. Every intent has `perm = 1`
+exactly, there are no tie sets, and there is nothing for mass to be spread over.
+**The hypothesis cannot explain the misattribution finding**, because the
+mechanism it names is unavailable there.
+
+### (b) What the committed misattributions do track — not much
+
+Leduc, `out_of_model`, adaptive, 2000 hands, **134 misattributions**. This
+subject optimises *concealment*, not pinnability, so any relationship found is
+discovered rather than built in (the `misattribute` subject is excluded here
+precisely because it *chooses* the most pinnable intent, which would be
+circular).
+
+```
+named intent MORE a-priori pinnable than declared : 85/134 = 63.4%  95% CI [55.0%, 71.1%]
+named intent LESS pinnable                        : 49/134 = 36.6%
+```
+
+Above chance, but weak — and **contradicted by its own detail**: the intent
+wrongly named most often is `value_bet` (64 of 134), which is one of the *least*
+pinnable intents (0.400 against `probe`'s 0.667). Pinnability is not the driver
+either.
+
+### (c) Where the mechanism *can* act, it still is not what is happening
+
+Tested in the pilot likelihood, where tie sets are real: 360 episodes, subject
+obeys its intent and breaks residual ties at random.
+
+```
+MAP correct 265/360 = 73.6%;  wrong 95
+
+named intent MORE SPECIFIC than assigned   63/95 = 66.3%   <- the prediction
+named intent MORE PERMISSIVE               32/95 = 33.7%
+```
+
+66.3% looks like support until you look at the size of the effect it is
+attributing:
+
+```
+median |perm difference| in a confusion   0.014   (full range across intents: 0.084)
+
+what the wrong attributions ACTUALLY differ in:
+  same ROUTING RULE, wrong destination    50/95 = 52.6%
+  same DESTINATION, wrong routing rule    37/95 = 38.9%
+  both wrong                               8/95 =  8.4%
+```
+
+Confusions happen between intents of **essentially identical permissiveness**.
+The commonest are `B/open_field → A/open_field` and `B/evasive → A/evasive`: the
+routing rule is recovered correctly and the **destination** is wrong.
+Permissiveness has nothing to say about that, and the 66.3% is a near-tie on a
+variable that barely varies being read as a trend.
+
+### (d) The pre-registration is revised, before recruiting
+
+**No correction was implemented.** Task (c) of the brief said to test a
+specificity prior *if the hypothesis held*. It does not, so building one would be
+fitting a correction to a bias that is not there.
+
+The revised prediction, now in `pilot.py`:
+
+> **Destination confusion dominates routing-rule confusion.** Report destination
+> accuracy and rule accuracy **separately**; a single intent-level number is
+> dominated by the destination component and hides how well the rule was
+> recovered.
+
+That is actionable in a way the original was not: it changes what the pilot
+reports, not just what we expect to see.
+
+### What this costs the misattribution finding
+
+It stays a negative result about our own method with **no structural
+explanation** — we tested the best candidate we had and it failed. The honest
+position is unchanged from the headline section: the observer is right about the
+policy and wrong only about the label, and no action history separates those.
+What we have now additionally ruled out is that the effect is an Occam bias over
+tie sets.
+
 ## Commands
 
 ```

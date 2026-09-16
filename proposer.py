@@ -377,8 +377,15 @@ WOULD explain this behaviour, described in plain English as a complete policy.
 CACHE_DIR = "fixtures/cache"
 
 
-def _cache_path(provider, model, prompt):
-    h = hashlib.sha256(f"{provider}\x00{model}\x00{prompt}".encode()).hexdigest()[:24]
+def _cache_path(provider, model, prompt, nonce=None):
+    """Cache key is (provider, model, prompt, nonce).
+
+    The nonce is NOT part of the prompt -- it exists so that repeated samples of
+    the SAME prompt get distinct cache entries. Without it every re-draw would
+    hit the first cached response and the reported variance would be zero by
+    construction, which would look like a very stable model."""
+    h = hashlib.sha256(f"{provider}\x00{model}\x00{prompt}\x00{nonce}".encode()
+                       ).hexdigest()[:24]
     return os.path.join(CACHE_DIR, f"{provider}-{h}.json")
 
 
@@ -398,9 +405,9 @@ class Proposer:
     def _post(self, prompt):
         raise NotImplementedError
 
-    def ask(self, prompt):
+    def ask(self, prompt, nonce=None):
         """-> (text, truncated). Cached, retried, and never silently truncated."""
-        path = _cache_path(self.name, self.model, prompt)
+        path = _cache_path(self.name, self.model, prompt, nonce)
         if self.use_cache and os.path.exists(path):
             with open(path) as f:
                 d = json.load(f)
@@ -412,7 +419,7 @@ class Proposer:
                 os.makedirs(CACHE_DIR, exist_ok=True)
                 with open(path, "w") as f:
                     json.dump({"provider": self.name, "model": self.model,
-                               "prompt": prompt, "text": text,
+                               "nonce": nonce, "prompt": prompt, "text": text,
                                "truncated": truncated}, f, indent=2)
                 return text, truncated
             except Exception as e:                     # noqa: BLE001 - provider-agnostic
@@ -470,7 +477,7 @@ class Ollama(Proposer):
 
 
 PROVIDERS = {"anthropic": Anthropic, "gemini": Gemini, "ollama": Ollama}
-DEFAULT_MODEL = {"anthropic": "claude-opus-5", "gemini": "gemini-2.5-pro",
+DEFAULT_MODEL = {"anthropic": "claude-opus-5", "gemini": "gemini-3.1-pro-preview",
                  "ollama": "llama3.1"}
 
 

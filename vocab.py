@@ -322,7 +322,11 @@ def classify(spec, err, rule, known_rules):
 # ------------------------------------------------------------------ runner
 
 def run(ask, label, n=1, rules=None):
-    """`ask(prompt) -> (text, truncated)`. Holds each rule out in turn."""
+    """`ask(prompt, nonce) -> (text, truncated)`. Holds each rule out in turn.
+
+    `n` is the number of independent draws per (held-out rule, prompt style).
+    A single draw is not a measurement: these models sample, so the spread
+    across draws is part of the result."""
     rules = rules or list(G.RULES)
     rows = []
     for rule in rules:
@@ -330,7 +334,7 @@ def run(ask, label, n=1, rules=None):
         for constrained in (True, False):
             for k in range(n):
                 prompt = build_prompt(rule, known, constrained)
-                text, truncated = ask(prompt)
+                text, truncated = ask(prompt, nonce=k)
                 if truncated:
                     rows.append((rule, constrained, "ill_formed",
                                  "response truncated", False))

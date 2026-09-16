@@ -386,13 +386,20 @@ def check():
           f"(worst {min(masses):.3f}, at-or-below prior in {below}/{len(masses)})")
     ok &= mean > prior
 
-    print("\n   OCCAM BIAS -- a real prediction about the pilot, not a defect.")
-    print("   A subject obeying a PERMISSIVE rule often gets attributed to a more")
-    print("   SPECIFIC one: if the move they freely chose is the only move the")
-    print("   specific rule allows, that rule assigns it probability 1 while the")
-    print("   permissive rule spreads mass over its tie set. This is correct")
-    print("   Bayesian behaviour and it means permissive intents will be")
-    print("   systematically under-recovered. Report it; do not tune it away.")
+    print("\n   PRE-REGISTERED PREDICTION -- REVISED 2026-09-15 after testing it.")
+    print("   The original prediction was an Occam bias: permissive intents would")
+    print("   be systematically attributed to more SPECIFIC ones. `specificity.py`")
+    print("   tested that and it does NOT hold. Confusions occur between intents of")
+    print("   essentially identical permissiveness (median |perm difference| 0.014")
+    print("   against a full range of 0.084), so permissiveness is not the driver.")
+    print("   ")
+    print("   What the data actually shows, and what we now predict instead:")
+    print("     DESTINATION confusion dominates ROUTING-RULE confusion.")
+    print("     52.6% of wrong attributions name the right rule and the wrong")
+    print("     destination; only 38.9% name the right destination and the wrong")
+    print("     rule. So report destination accuracy and rule accuracy SEPARATELY;")
+    print("     a single intent-level number will be dominated by the destination")
+    print("     component and will hide how well the rule was recovered.")
 
     print("\n4. Records round-trip: logged decisions rescore without the session.")
     rec = {"decisions": [[list(G.STARTS[0]), 0, 1, None, "S"]]}

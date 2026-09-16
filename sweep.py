@@ -704,7 +704,8 @@ REQUIRED_SECTIONS = [
     "## Task 3: cost-aware observer", "## Hardening the misattribution result",
     "## Task 4c: a deception-aware observer", "## The consistent misattributor",
     "## Gridworld", "## Soft elimination", "## LLM as proposer",
-    "## Vocabulary proposal", "## Gridworld human pilot", "## Commands",
+    "## Vocabulary proposal", "## Gridworld human pilot",
+    "## The specificity hypothesis", "## Commands",
 ]
 RESULTS_LINE_FLOOR = 1100
 
