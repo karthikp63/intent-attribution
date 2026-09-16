@@ -478,6 +478,31 @@ class Gemini(Proposer):
         return text, cand.get("finishReason") == "MAX_TOKENS"
 
 
+class OpenAI(Proposer):
+    name, env_key = "openai", "OPENAI_API_KEY"
+    min_interval = 0.4
+
+    def _post(self, prompt):
+        body = {"model": self.model,
+                "messages": [{"role": "user", "content": prompt}]}
+        # The gpt-5 family reasons before answering and rejects `max_tokens`;
+        # older models reject `max_completion_tokens`. Pick by family rather
+        # than guessing, and give reasoning models room the way Gemini needs.
+        if self.model.startswith(("gpt-5", "o1", "o3", "o4")):
+            body["max_completion_tokens"] = self.max_tokens
+        else:
+            body["max_tokens"] = min(self.max_tokens, 4096)
+        req = urllib.request.Request(
+            "https://api.openai.com/v1/chat/completions",
+            data=json.dumps(body).encode(),
+            headers={"content-type": "application/json",
+                     "authorization": f"Bearer {self.key}"})
+        with urllib.request.urlopen(req, timeout=180) as r:
+            d = json.loads(r.read())
+        c = d["choices"][0]
+        return c["message"]["content"] or "", c.get("finish_reason") == "length"
+
+
 class Ollama(Proposer):
     """Local, so no key. Host from OLLAMA_HOST, default localhost."""
     name, env_key = "ollama", None
@@ -493,9 +518,10 @@ class Ollama(Proposer):
         return d["response"], d.get("done_reason") == "length"
 
 
-PROVIDERS = {"anthropic": Anthropic, "gemini": Gemini, "ollama": Ollama}
-DEFAULT_MODEL = {"anthropic": "claude-opus-5", "gemini": "gemini-3.1-pro-preview",
-                 "ollama": "llama3.1"}
+PROVIDERS = {"anthropic": Anthropic, "gemini": Gemini, "openai": OpenAI,
+             "ollama": Ollama}
+DEFAULT_MODEL = {"anthropic": "claude-opus-5", "gemini": "gemini-3.5-flash",
+                 "openai": "gpt-5", "ollama": "llama3.1"}
 
 
 # ------------------------------------------- real contradiction histories

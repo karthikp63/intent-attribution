@@ -321,7 +321,7 @@ def classify(spec, err, rule, known_rules):
 
 # ------------------------------------------------------------------ runner
 
-def run(ask, label, n=1, rules=None):
+def run(ask, label, n=1, rules=None, styles=(True, False)):
     """`ask(prompt, nonce) -> (text, truncated)`. Holds each rule out in turn.
 
     `n` is the number of independent draws per (held-out rule, prompt style).
@@ -331,7 +331,7 @@ def run(ask, label, n=1, rules=None):
     rows = []
     for rule in rules:
         known = [r for r in G.RULES if r != rule]
-        for constrained in (True, False):
+        for constrained in styles:
             for k in range(n):
                 prompt = build_prompt(rule, known, constrained)
                 text, truncated = ask(prompt, nonce=k)

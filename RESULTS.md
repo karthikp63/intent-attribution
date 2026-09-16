@@ -1328,6 +1328,21 @@ a bias with a known direction might be correctable.
 **It does not hold.** Tested against data we already had, before anyone was
 recruited.
 
+> **Status: DEAD. Do not re-run this.** Recorded at this length precisely so
+> that the next person to look at confident misattribution — including future us
+> — does not spend a week rediscovering that it is not an Occam bias. What is
+> still open is stated at the end of this section.
+
+**Why it looked likely.** It had the two properties a good structural
+explanation needs. It named a *mechanism* rather than a correlation — mass
+spread over a tie set — and that mechanism is real arithmetic that does happen
+in any likelihood over under-determined policies. And it predicted a *direction*,
+which meant it could be corrected rather than merely lamented. It was also the
+only candidate that promised to unify poker and gridworld, since both showed the
+same misattribution ordering. Those three things together are why it was worth
+pre-registering, and equally why it was worth testing before anyone was
+recruited on the strength of it.
+
 ### Permissiveness, defined before looking
 
 For an intent `i`, `perm(i)` = the mean, over reachable decision states, of the
@@ -1416,7 +1431,7 @@ The revised prediction, now in `pilot.py`:
 That is actionable in a way the original was not: it changes what the pilot
 reports, not just what we expect to see.
 
-### What this costs the misattribution finding
+### What this costs the misattribution finding, and what is still open
 
 It stays a negative result about our own method with **no structural
 explanation** — we tested the best candidate we had and it failed. The honest
@@ -1424,6 +1439,24 @@ position is unchanged from the headline section: the observer is right about the
 policy and wrong only about the label, and no action history separates those.
 What we have now additionally ruled out is that the effect is an Occam bias over
 tie sets.
+
+**Still open, for whoever picks this up next.** Misattribution is robust across
+two environments, a map rebuild and both interaction modes, and we cannot say
+why. Candidates not yet tested, in the order we would try them:
+
+1. **It is not one phenomenon.** The committed runs and the pilot likelihood may
+   fail for unrelated reasons — the first has no tie sets at all, the second is
+   dominated by destination confusion. Treating them as one effect may be the
+   error.
+2. **Structure of the intent space**, not of any intent: how much of the
+   behaviour space each intent occupies, and which intents are near-neighbours
+   under the observer's own partition.
+3. **The declared/executed gap is irreducible** and there is nothing to explain
+   — in which case the finding is a limit on behavioural inference and should be
+   stated as a theorem attempt, not chased as a bug.
+
+Anything tested here should be added to this list with its outcome, refuted
+included.
 
 ## Descriptions vs behaviour — a check for the class of bug numbers cannot catch
 
