@@ -1375,6 +1375,82 @@ than assuming no rule at all. Those are exactly the two rules with near-zero
 binary recovery, so the graded view confirms the concentration rather than
 softening it.
 
+### Why two rules are dead: it is NOT an informational limit
+
+The hypothesis was that ordering is unrecoverable — that several orderings of a
+rule's criteria look identical on the shown episodes and diverge on unseen ones.
+**It cannot apply as stated**: the true specs have length 0 or 1, so there is
+only one ordering to get right. Tested the correct generalisation instead —
+enumerate the whole DSL up to length 2 (**183 specs**) and ask how many are
+indistinguishable from the truth on the 36 shown trajectories but diverge on the
+36 unseen ones.
+
+```
+held-out rule   |true spec|   match SHOWN   of those, match UNSEEN   TRAPS
+direct                   0             53                      53       0
+wall_hug                 1              5                       5       0
+open_field               1              6                       6       0
+evasive                  1              5                       5       0
+```
+
+**Zero traps, for every rule.** Every spec that fits the training trajectories
+also predicts the unseen ones. The 36 shown episodes *fully determine* the rule.
+
+Pooling all 676 compiled proposals across every model, prompt and style:
+
+```
+compiled                                676
+FITS the 36 trajectories it was SHOWN   150  = 22.2%
+generalises to the 36 unseen            152  = 22.5%
+fits shown BUT fails unseen               0
+```
+
+**Generalisation is free; fitting is the entire bottleneck.** 77.8% of compiled
+proposals contradict trajectories the model was *literally shown*. And the
+per-rule fit rate reproduces the recovery ordering exactly:
+
+```
+rule         compiled   fits shown   generalises
+direct            157        10.2%         10.2%
+wall_hug          178         5.6%          6.7%
+open_field        171        31.6%         31.6%
+evasive           170        41.2%         41.2%
+```
+
+**So the diagnosis is mundane, not structural.** Two specific causes:
+
+* **`direct` is our framing artifact.** Its true answer is *"there is no further
+  rule"* — the empty spec. The prompt asks the model to "propose ONE new routing
+  rule that explains this behaviour", and v2 adds that "almost every rule needs
+  exactly ONE" criterion. **The question presupposes a rule exists**, so "no
+  rule" is not an available answer. The commonest proposals are
+  `[openness max]` (x33), a four-criterion goal-directed spec (x27), and
+  `[openness min]` (x17) — all contradicted by the shown data. This is fixable
+  by letting the answer be empty, and we have not fixed it, because the tuning
+  budget was spent.
+* **`wall_hug` is confused with its neighbours.** The commonest proposal is
+  `[observer_dist max]` — which *is* `evasive`, a rule still in the vocabulary
+  (x48, classified duplicate) — followed by `[openness max]`, the exact opposite
+  of the truth (x24). On this map, hugging walls often also increases distance
+  from the observer, so the salient explanation ("avoiding the watcher") wins
+  over the correct one. The shown data distinguishes them; the model does not
+  check.
+
+### The suggested connection to misattribution does NOT hold
+
+The brief asked whether this links to confident misattribution — both being
+cases where behaviour underdetermines what produced it. **The data says no, and
+that is worth stating clearly rather than drawing a pleasing parallel.**
+
+In misattribution, behaviour genuinely underdetermines the label: the observer is
+right about the policy and no action history distinguishes "is executing X" from
+"believes they are executing Y". That is an informational limit.
+
+Here there is no informational limit at all — 0 traps, 0 fit-but-fail-to-
+generalise. The evidence is sufficient and the proposer simply fails to fit it.
+These are *different kinds of failure*, and merging them would have manufactured
+a unified story the measurements do not support.
+
 ### Where this leaves the component
 
 The best measured recovery is **37.5% [27.7%, 48.5%]** (gpt-5-mini, constrained,
