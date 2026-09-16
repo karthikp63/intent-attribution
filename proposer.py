@@ -377,15 +377,19 @@ WOULD explain this behaviour, described in plain English as a complete policy.
 CACHE_DIR = "fixtures/cache"
 
 
-def _cache_path(provider, model, prompt, nonce=None):
+def _cache_path(provider, model, prompt, nonce=None, max_tokens=None):
     """Cache key is (provider, model, prompt, nonce).
 
     The nonce is NOT part of the prompt -- it exists so that repeated samples of
     the SAME prompt get distinct cache entries. Without it every re-draw would
     hit the first cached response and the reported variance would be zero by
     construction, which would look like a very stable model."""
-    h = hashlib.sha256(f"{provider}\x00{model}\x00{prompt}\x00{nonce}".encode()
-                       ).hexdigest()[:24]
+    # max_tokens is part of the key: a response truncated under a smaller budget
+    # is a DIFFERENT response, and omitting it meant raising the budget silently
+    # returned the old truncated entry.
+    h = hashlib.sha256(
+        f"{provider}\x00{model}\x00{prompt}\x00{nonce}\x00{max_tokens}".encode()
+    ).hexdigest()[:24]
     return os.path.join(CACHE_DIR, f"{provider}-{h}.json")
 
 
@@ -395,9 +399,15 @@ class Proposer:
     name = "base"
     env_key = None
 
-    def __init__(self, model, max_tokens=4096, retries=4, use_cache=True):
+    min_interval = 0.0        # seconds between calls; free tiers are rate-limited
+
+    def __init__(self, model, max_tokens=24576, retries=6, use_cache=True,
+                 min_interval=None):
         self.model, self.max_tokens = model, max_tokens
         self.retries, self.use_cache = retries, use_cache
+        if min_interval is not None:
+            self.min_interval = min_interval
+        self._last = 0.0
         self.key = os.environ.get(self.env_key) if self.env_key else None
         if self.env_key and not self.key:
             raise SystemExit(f"{self.env_key} is not set; use --backend fixture")
@@ -407,7 +417,7 @@ class Proposer:
 
     def ask(self, prompt, nonce=None):
         """-> (text, truncated). Cached, retried, and never silently truncated."""
-        path = _cache_path(self.name, self.model, prompt, nonce)
+        path = _cache_path(self.name, self.model, prompt, nonce, self.max_tokens)
         if self.use_cache and os.path.exists(path):
             with open(path) as f:
                 d = json.load(f)
@@ -415,6 +425,10 @@ class Proposer:
         last = None
         for attempt in range(self.retries):
             try:
+                gap = self.min_interval - (time.time() - self._last)
+                if gap > 0:
+                    time.sleep(gap)
+                self._last = time.time()
                 text, truncated = self._post(prompt)
                 os.makedirs(CACHE_DIR, exist_ok=True)
                 with open(path, "w") as f:
@@ -425,7 +439,9 @@ class Proposer:
             except Exception as e:                     # noqa: BLE001 - provider-agnostic
                 last = e
                 if attempt < self.retries - 1:
-                    time.sleep(2 ** attempt)
+                    # 429 on a free tier means "wait", not "fail" -- back off hard
+                    code = getattr(e, "code", None)
+                    time.sleep((8 * (attempt + 1)) if code == 429 else 2 ** attempt)
         raise RuntimeError(f"{self.name} failed after {self.retries} attempts: {last}")
 
 
@@ -446,6 +462,7 @@ class Anthropic(Proposer):
 
 class Gemini(Proposer):
     name, env_key = "gemini", "GEMINI_API_KEY"
+    min_interval = 4.5        # free tier is a few requests per minute
 
     def _post(self, prompt):
         url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
