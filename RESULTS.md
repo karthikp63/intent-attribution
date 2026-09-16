@@ -1425,6 +1425,61 @@ policy and wrong only about the label, and no action history separates those.
 What we have now additionally ruled out is that the effect is an Occam bias over
 tie sets.
 
+## Descriptions vs behaviour — a check for the class of bug numbers cannot catch
+
+`python3 glosses.py`, and in the gate.
+
+`wall_hug` and `open_field` were implemented **backwards for five days**. Every
+numeric check in the project passed over it, because swapping two labels is a
+pure relabelling and changes no aggregate. It surfaced only when the vocabulary
+experiment forced something to assert that a rule's *gloss* matches its
+*behaviour*.
+
+That is the shape of the recent failures in this project, and it is worth naming:
+**the object-level code is solid; the errors live in the things that describe
+it.** The guard's own config listing a stale section set. A bound labelled as
+covering more than it did. Two rules named backwards. Numbers cannot catch any of
+these, because a wrong description of right behaviour produces right numbers.
+
+So every place a human-readable description sits next to executable behaviour,
+the description is now turned into a machine-checkable predicate and asserted:
+
+| where | shown to | checks |
+|---|---|---|
+| gridworld routing-rule glosses | the LLM, in the vocabulary prompt | 1101 real choices per rule |
+| pilot participant instructions | **human subjects** | 576–590 accepted moves per rule |
+| Leduc intent glosses | the LLM, in the poker proposer prompt | 7 checkable claims |
+
+Each predicate is deliberately **weaker than the implementation** — it encodes
+only what the sentence actually claims. A predicate that restated the code would
+pass by construction and catch nothing. `give_up`'s gloss says "check and fold",
+so the check is that its action set is a subset of `{check, fold}`; it says
+nothing about *when*.
+
+The Leduc checks additionally verify that the quoted fragment is still a
+substring of `INTENT_GLOSS`, so editing the prose without editing the claim fails
+rather than silently decoupling. That fired on first run — one claim was a
+paraphrase rather than a quote.
+
+**The checker was falsified against the real bug.** Re-introducing the exact
+`wall_hug`/`open_field` inversion in memory produces:
+
+```
+wall_hug     1101 real choices checked -> VIOLATED in 546
+open_field   1101 real choices checked -> VIOLATED in 546
+```
+
+A check that would not have caught the bug it was written for is not worth
+having, so this is verified rather than assumed.
+
+### `must_replace`
+
+`glosses.must_replace(text, old, new, label)` raises when the anchor is absent.
+Unanchored `str.replace` no-ops silently on a missed anchor, which is how the
+document guard came to report 13/13 while checking a stale list — the edit that
+was supposed to register a new section simply did nothing, and nothing said so.
+Scripted edits to tracked files go through it.
+
 ## Commands
 
 ```

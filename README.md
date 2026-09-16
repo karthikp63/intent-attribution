@@ -328,6 +328,16 @@ It already predicts one thing: subjects following a *permissive* rule will be
 systematically attributed to a more *specific* one (Occam's razor over the tie
 set). Recorded in advance rather than discovered afterwards.
 
+## Descriptions vs behaviour
+
+`python3 glosses.py`. `wall_hug` and `open_field` were implemented backwards for
+five days and every numeric check passed over it, because a pure relabelling
+changes no aggregate. Anywhere a human-readable description sits next to
+executable behaviour — routing-rule glosses shown to an LLM, participant
+instructions shown to humans, poker intent glosses — the description is now a
+machine-checkable predicate and asserted in the gate. Verified by re-introducing
+the original inversion: it produces 546 violations per rule.
+
 ## Background
 
 - Keren, Gal & Karpas, *Goal Recognition Design*, ICAPS 2014 — worst-case

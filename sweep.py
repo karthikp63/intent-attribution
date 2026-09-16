@@ -23,6 +23,7 @@ import sys
 import core
 import gridworld as GW
 import soft
+import glosses
 import pilot
 import vocab
 import kuhn_intent as K
@@ -210,7 +211,8 @@ def verify():
 
     ok = ((not bad_records) and (not bad_metrics) and kuhn_coverage()
           and grid_selfcheck() and soft.verify(hands=120)
-          and vocab.selftest() and pilot.check() and document_check())
+          and vocab.selftest() and pilot.check() and glosses.check()
+          and document_check())
     print("\nRESULT: " + ("PASS -- identical hand for hand and metric for metric."
                           if ok else
                           "FAIL -- divergence found. STOP; one implementation is wrong."))
@@ -705,7 +707,7 @@ REQUIRED_SECTIONS = [
     "## Task 4c: a deception-aware observer", "## The consistent misattributor",
     "## Gridworld", "## Soft elimination", "## LLM as proposer",
     "## Vocabulary proposal", "## Gridworld human pilot",
-    "## The specificity hypothesis", "## Commands",
+    "## The specificity hypothesis", "## Descriptions vs behaviour", "## Commands",
 ]
 RESULTS_LINE_FLOOR = 1100
 
