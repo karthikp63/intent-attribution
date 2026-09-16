@@ -141,6 +141,33 @@ def eff_size(p):
     return math.exp(h)
 
 
+def marginals(p):
+    """Split a posterior over intents into its two independent halves.
+
+    The specificity hypothesis was refuted and replaced by this: confusions are
+    52.6% right-rule-wrong-destination and 38.9% the reverse. The destination
+    and the routing rule fail INDEPENDENTLY, so a single intent-level number is
+    dominated by whichever half is worse and hides the other. Every metric below
+    is therefore reported three ways: joint, destination-only, rule-only.
+    """
+    dest, rule = {}, {}
+    for (d, r), v in p.items():
+        dest[d] = dest.get(d, 0.0) + v
+        rule[r] = rule.get(r, 0.0) + v
+    return dest, rule
+
+
+def hpd_contains(p, target, level=0.95):
+    acc = 0.0
+    for i, v in sorted(p.items(), key=lambda kv: -kv[1]):
+        acc += v
+        if i == target:
+            return True
+        if acc >= level - 1e-12:
+            return False
+    return True
+
+
 # ------------------------------------------------------------- the session
 
 def session_plan(participant, n_episodes, include_direct=False, seed=None):
@@ -207,8 +234,12 @@ def run_session(participant, n_episodes, out_path, include_direct=False, dry_run
     intents = assignable_intents(include_direct)
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
     print(BRIEF)
+    per = n_episodes // len(intents)
+    spread = (f"each used {per}x" if per and n_episodes % len(intents) == 0
+              else f"{per}-{per + 1}x each" if per
+              else f"a subset of {n_episodes} of them (short demo session)")
     print(f"Participant {participant}: {n_episodes} rounds, "
-          f"{len(intents)} intents, each used {n_episodes // len(intents)}x.\n")
+          f"{len(intents)} assigned intents, {spread}.\n")
 
     with open(out_path, "a") as fh:
         for spec in plan:
@@ -270,52 +301,73 @@ def analyse(paths, eps_grid=EPS_GRID):
     by_p = {}
     for r in recs:
         by_p.setdefault(r["participant"], []).append(r)
-    n_int = recs[0]["n_intents"]
-    prior = 1.0 / n_int
     intents = assignable_intents(recs[0]["include_direct"])
+    n_int = len(intents)
+    n_dest = len({i[0] for i in intents})
+    n_rule = len({i[1] for i in intents})
+    priors = {"intent": 1.0 / n_int, "destination": 1.0 / n_dest, "rule": 1.0 / n_rule}
 
     print(f"\n## Gridworld pilot -- {len(recs)} episodes, "
-          f"{len(by_p)} participant(s), {n_int} intents\n")
-    print(f"HEADLINE METRIC: posterior mass on the ASSIGNED intent.")
-    print(f"Uniform prior = 1/{n_int} = {prior:.3f}. Mass at or near the prior means")
-    print(f"the behaviour carried no information about the intent the person was given.\n")
+          f"{len(by_p)} participant(s), {n_int} intents "
+          f"({n_dest} destinations x {n_rule} routing rules)\n")
+    print("HEADLINE: posterior mass on the ASSIGNED intent, against the uniform prior.")
+    print("Reported THREE ways, because the two halves of an intent fail")
+    print("independently -- confusions are 52.6% right-rule-wrong-destination and")
+    print("38.9% the reverse, so a single joint number hides which half failed.")
+    print(f"Priors: intent {priors['intent']:.3f}  destination {priors['destination']:.3f} "
+          f" rule {priors['rule']:.3f}\n")
 
-    hdr = f"{'participant':<14}{'n':>5}" + "".join(f"{f'eps={e}':>11}" for e in eps_grid)
+    def masses(rows, eps):
+        out = {"intent": 0.0, "destination": 0.0, "rule": 0.0}
+        for r in rows:
+            p = posterior(r["decisions"], eps, intents)
+            a = tuple(r["assigned_intent"])
+            d, ru = marginals(p)
+            out["intent"] += p[a]
+            out["destination"] += d.get(a[0], 0.0)
+            out["rule"] += ru.get(a[1], 0.0)
+        return {k: v / len(rows) for k, v in out.items()}
+
+    for level in ("intent", "destination", "rule"):
+        print(f"### posterior mass on the assigned {level.upper()} "
+              f"(prior {priors[level]:.3f})")
+        hdr = f"{'participant':<14}{'n':>5}" + "".join(f"{f'eps={e}':>11}" for e in eps_grid)
+        print(hdr)
+        print("-" * len(hdr))
+        for who in sorted(by_p) + (["POOLED"] if len(by_p) > 1 else []):
+            rows = recs if who == "POOLED" else by_p[who]
+            cells = "".join(f"{masses(rows, e)[level]:>11.3f}" for e in eps_grid)
+            print(f"{who:<14}{len(rows):>5}{cells}")
+        print(f"{'(prior)':<14}{'':>5}"
+              + "".join(f"{priors[level]:>11.3f}" for _ in eps_grid))
+        print()
+
+    print("Supporting, at eps = 0.1 (never the headline -- soundness went to 100%")
+    print("in the poker rescore while mass stayed at 0.24):\n")
+    hdr = (f"{'participant':<14}{'MAP intent':>11}{'MAP dest':>10}{'MAP rule':>10}"
+           f"{'|H|eff':>8}{'|D|eff':>8}{'|R|eff':>8}{'HPD int':>9}")
     print(hdr)
     print("-" * len(hdr))
     for who in sorted(by_p) + (["POOLED"] if len(by_p) > 1 else []):
         rows = recs if who == "POOLED" else by_p[who]
-        cells = []
-        for eps in eps_grid:
-            m = sum(posterior(r["decisions"], eps, intents)[tuple(r["assigned_intent"])]
-                    for r in rows) / len(rows)
-            cells.append(f"{m:>11.3f}")
-        print(f"{who:<14}{len(rows):>5}" + "".join(cells))
-    print(f"{'(prior)':<14}{'':>5}" + "".join(f"{prior:>11.3f}" for _ in eps_grid))
-
-    print("\nSupporting (never the headline):")
-    print(f"{'participant':<14}{'MAP correct':>13}{'|H| eff':>10}{'in 95% HPD':>13}")
-    print("-" * 50)
-    for who in sorted(by_p) + (["POOLED"] if len(by_p) > 1 else []):
-        rows = recs if who == "POOLED" else by_p[who]
-        mp = hp = 0
-        hs = 0.0
+        acc = dict.fromkeys(["mi", "md", "mr", "hi", "hd", "hr", "hp"], 0.0)
         for r in rows:
             p = posterior(r["decisions"], 0.1, intents)
             a = tuple(r["assigned_intent"])
-            mp += max(p, key=p.get) == a
-            hs += eff_size(p)
-            acc, tot = [], 0.0
-            for i, v in sorted(p.items(), key=lambda kv: -kv[1]):
-                acc.append(i)
-                tot += v
-                if tot >= 0.95:
-                    break
-            hp += a in acc
+            d, ru = marginals(p)
+            acc["mi"] += max(p, key=p.get) == a
+            acc["md"] += max(d, key=d.get) == a[0]
+            acc["mr"] += max(ru, key=ru.get) == a[1]
+            acc["hi"] += eff_size(p)
+            acc["hd"] += eff_size(d)
+            acc["hr"] += eff_size(ru)
+            acc["hp"] += hpd_contains(p, a)
         n = len(rows)
-        print(f"{who:<14}{mp / n:>12.1%}{hs / n:>10.2f}{hp / n:>12.1%}")
-    print("  (at eps = 0.1; soundness/HPD is reported because it is comparable to")
-    print("   the poker pilot, NOT because it is the number to judge this by)")
+        print(f"{who:<14}{acc['mi']/n:>10.1%}{acc['md']/n:>10.1%}{acc['mr']/n:>10.1%}"
+              f"{acc['hi']/n:>8.2f}{acc['hd']/n:>8.2f}{acc['hr']/n:>8.2f}"
+              f"{acc['hp']/n:>8.1%}")
+    print("\n  MAP dest / MAP rule are the split that matters: they fail")
+    print("  independently, and the joint number is dominated by whichever is worse.")
 
 
 # ------------------------------------------------------------ self-check
