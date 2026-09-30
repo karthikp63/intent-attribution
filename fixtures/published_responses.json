@@ -1,0 +1,192 @@
+{
+  "openai-060cfa165313130a6df7753a.json": {
+    "prompt_sha256": "570446c4d5488fa5deaa892a6f52b021bc13503f6d55451de252213699d9d6fe",
+    "text": "Prefers the square with a larger column (i.e., more to the right).\n\n[{\"criterion\":\"col\",\"direction\":\"max\"}]",
+    "truncated": false
+  },
+  "openai-0babeebdc23e7199e850e08c.json": {
+    "prompt_sha256": "c3e053275000ad6278de30e30919f40c20361162680d3ec94e7bc2ac7ae29750",
+    "text": "{\"hypotheses\":[{\"rule\":\"Prefer moves that bring the subject closer to the observer (minimize observer_dist). If observer_dist is tied, prefer the square with higher openness; further ties resolved by continuing previous momentum then fixed order N,E,S,W.\",\"score\":\"(observer_dist - openness)\",\"direction\":\"min\"},{\"rule\":\"Prefer moves that improve horizontal alignment with the goal (maximize goal_col_align), breaking ties by preferring moves that get closer to the observer.\",\"score\":\"(goal_col_align - observer_dist)\",\"direction\":\"max\"}]}",
+    "truncated": false
+  },
+  "openai-0bfaf14e6e83af5fdbf58b68.json": {
+    "prompt_sha256": "ddc691ffc09ca26e475ebbcaa8692dcbd8d75f8830531d4632e069cf10e20ff2",
+    "text": "{\"rule\":null,\"score\":null,\"direction\":null}",
+    "truncated": false
+  },
+  "openai-121a83529b72c4514b2234a0.json": {
+    "prompt_sha256": "03e9b4b425c1a12aa7028378a7b329c544c006295519747a67699eedc25ed217",
+    "text": "{\"rule\":\"prefer squares that are closer (in Manhattan distance) to the landmark\",\"score\":\"abs(row - landmark_row) + abs(col - landmark_col)\",\"direction\":\"min\"}",
+    "truncated": false
+  },
+  "openai-181b752468b7ae69a9a96cca.json": {
+    "prompt_sha256": "974ee407f8f0e428dee52d9a2c8ce18c81a95936fa9a0618586c6f58518e7bc0",
+    "text": "{\"rule\":\"Prefer moves that reduce the column distance to the goal (i.e. favor eastward progress toward the goal)\",\"score\":\"goal_col_align\",\"direction\":\"max\"}",
+    "truncated": false
+  },
+  "openai-1cc9d156412553078bd9a342.json": {
+    "prompt_sha256": "4aae5e9abeed6e626865d5a087cae1dce94e9d0c8266b1488f8e3e3d69b49e21",
+    "text": "Prefers moves that continue in the same direction as the previous move (momentum = max).\n\n[{\"criterion\": \"momentum\", \"direction\": \"max\"}]",
+    "truncated": false
+  },
+  "openai-259f6de0b2d17990eda43dbb.json": {
+    "prompt_sha256": "626d2063463b24a8c6cba5122aeac48a07c78132ba6e0b58266dfb8438183cad",
+    "text": "{\"hypotheses\":[{\"rule\":\"Prefer moves that reduce horizontal distance to the goal (move east when that gets you nearer); break ties by moving closer to the observer.\",\"score\":\"goal_col_align - observer_dist\",\"direction\":\"max\"},{\"rule\":\"Prefer the more open next square (higher openness); break ties by moving closer to the observer.\",\"score\":\"openness - observer_dist\",\"direction\":\"max\"}]}",
+    "truncated": false
+  },
+  "openai-46074b178b5625563675d38f.json": {
+    "prompt_sha256": "0fc35adf073f081ce36a687b15368480257444e06c94851e4980a05d4414fb0b",
+    "text": "Prefers steps that do NOT continue the previous direction (minimize momentum); if still tied, prefers the square further to the right (maximize column).\n\n[{\"criterion\": \"momentum\", \"direction\": \"min\"}, {\"criterion\": \"col\", \"direction\": \"max\"}]",
+    "truncated": false
+  },
+  "openai-531fbe4cd666fa4d29cc5a0f.json": {
+    "prompt_sha256": "d4e292c2bd3eccf7cdb24080759da4003434940d505cde7b476c140c1bb64271",
+    "text": "{\"hypotheses\":[{\"rule\":\"Prefer moves that improve horizontal alignment to the goal more strongly than vertical alignment, and avoid more-open squares (penalize openness).\",\"score\":\"goal_row_align + 2*goal_col_align - 2*openness\",\"direction\":\"max\",\"next_square\":[3,5],\"next_score\":-14},{\"rule\":\"Prefer moves that strongly reduce the column offset to the goal, also reduce row offset, and slightly favor continuing the previous direction; penalize openness.\",\"score\":\"goal_row_align + 3*goal_col_align + momentum - 3*openness\",\"direction\":\"max\",\"next_square\":[3,5],\"next_score\":-18}]}",
+    "truncated": false
+  },
+  "openai-54f979f834c708073425dddf.json": {
+    "prompt_sha256": "c2cfce5ff1050a7e293682e33be9a54113167934d0c234a6c0a0417360f09728",
+    "text": "prefers the square closer to the observer (observer_dist min)\n\n[{\"criterion\": \"observer_dist\", \"direction\": \"min\"}]",
+    "truncated": false
+  },
+  "openai-59bdde21bb5d110c93c37a62.json": {
+    "prompt_sha256": "d1aeca2fd54373ff1ae03afb733f1c14dbedafc7a1df15beeb8d03dedabad208",
+    "text": "{\"hypotheses\":[{\"rule\":\"Prefer moves that reduce the row distance to the goal (i.e. move toward the goal's row).\",\"score\":\"goal_row_align\",\"direction\":\"max\",\"example_next_square\":{\"row\":4,\"col\":7,\"score_value\":-3}},{\"rule\":\"Prefer moves that reduce the column distance to the goal (i.e. move toward the goal's column).\",\"score\":\"goal_col_align\",\"direction\":\"max\",\"example_next_square\":{\"row\":4,\"col\":7,\"score_value\":0}}]}",
+    "truncated": false
+  },
+  "openai-5c2dc11d0630184bb49e21f9.json": {
+    "prompt_sha256": "03e9b4b425c1a12aa7028378a7b329c544c006295519747a67699eedc25ed217",
+    "text": "{\"rule\":\"prefer squares closer to the landmark\",\"score\":\"abs(row - landmark_row) + abs(col - landmark_col)\",\"direction\":\"min\"}",
+    "truncated": false
+  },
+  "openai-6dec1487b3eebd4b0bf0f91c.json": {
+    "prompt_sha256": "4bc930999a5e9311dad92d11d3a9f54fb874594eb7232f2e8a54c7656344d556",
+    "text": "Prefers steps that change direction (minimizes momentum — prefers moves that do NOT continue the previous direction).\n\n[{\"criterion\": \"momentum\", \"direction\": \"min\"}]",
+    "truncated": false
+  },
+  "openai-724fbfd41d178b58d0dc9c05.json": {
+    "prompt_sha256": "41ac9ea6c7add86b1d12a8ad392fdae989dafae367b7a687fd2ff0ba06d3d499",
+    "text": "{\"rule\":\"cannot tell from the provided routes\",\"score\":null,\"direction\":null}",
+    "truncated": false
+  },
+  "openai-8409a98755ce12279354e87d.json": {
+    "prompt_sha256": "c7a5d8fc1c3245a01a1a70349d8ad1ca2a527e6d724af62eec34bca8ac4e252c",
+    "text": "Prefers the square with the larger column (i.e., moves East when equally short options exist).\n\n[{\"criterion\":\"col\",\"direction\":\"max\"}]",
+    "truncated": false
+  },
+  "openai-88f3f807b3a4b3bbb8e5eb0f.json": {
+    "prompt_sha256": "6895c6281fa9f34175f39e3a0b59f138a8ccc8bd85f2a8f6cf2defb54e29aee4",
+    "text": "{\"hypotheses\":[{\"rule\":\"Prefer moves that balance remaining row-vs-col distance to the goal (try to make row and column progress about equal).\",\"score\":\"abs(goal_row_align - goal_col_align)\",\"direction\":\"min\"},{\"rule\":\"Prefer to keep moving in the same direction (momentum); if equally continuing/not continuing, prefer the move that increases distance from the observer.\",\"score\":\"(8*momentum) + observer_dist\",\"direction\":\"max\"}]}",
+    "truncated": false
+  },
+  "openai-8a6f0ba203df828778286b7e.json": {
+    "prompt_sha256": "94d9fd38da588c74dd55cd02ae1d4fbac42022dccaabaaa6bcbcf8dc8a8a169e",
+    "text": "{\"rule\":\"cannot tell\",\"score\":null,\"direction\":null}",
+    "truncated": false
+  },
+  "openai-8d0bc1f21e0b3e3b352ac8fc.json": {
+    "prompt_sha256": "2001258e556a75ca1e3cab25c75b18258b5c70ce2b825da75c68fe3c52c5ed4d",
+    "text": "{\"rule\":\"Prefer moves that improve the goal's row alignment more than the goal's column alignment; if tied, use the default N,E,S,W order.\",\"score\":\"goal_row_align - goal_col_align\",\"direction\":\"max\"}",
+    "truncated": false
+  },
+  "openai-90e21633a06576105a50d9e6.json": {
+    "prompt_sha256": "28a10e312250132b4332c0b3baa61bdecd989780ed7d12f5acc85ca47fbb1ab7",
+    "text": "{\"rule\":\"Prefer steps that bring you closer to the goal column (maximize column alignment).\",\"score\":\"goal_col_align\",\"direction\":\"max\"}",
+    "truncated": false
+  },
+  "openai-943e38f2c54d0a84c7125a4b.json": {
+    "prompt_sha256": "196d423333d7ab52ccd1bf8915e9ef33f409708e07417d8ed9b28b5f0f2d5507",
+    "text": "prefers the square closer to the observer (observer_dist, min)\n\n[{\"criterion\": \"observer_dist\", \"direction\": \"min\"}]",
+    "truncated": false
+  },
+  "openai-9889bcf9e3cef5dbe4a35d77.json": {
+    "prompt_sha256": "be0c9f5690cc6c2fbce5d6caf7ab9054a3caff3d99a47c7d28198f10ed8450d2",
+    "text": "{\"rule\":\"cannot tell\",\"score\":null,\"direction\":null}",
+    "truncated": false
+  },
+  "openai-9a0b69bb2ab7272573e78a34.json": {
+    "prompt_sha256": "4aae5e9abeed6e626865d5a087cae1dce94e9d0c8266b1488f8e3e3d69b49e21",
+    "text": "Prefers continuing the same direction (momentum = max); if still tied, prefers the square closer to the observer (observer_dist = min).\n\n[{\"criterion\":\"momentum\",\"direction\":\"max\"},{\"criterion\":\"observer_dist\",\"direction\":\"min\"}]",
+    "truncated": false
+  },
+  "openai-a1be82699dfe33c27e1a93be.json": {
+    "prompt_sha256": "c7a5d8fc1c3245a01a1a70349d8ad1ca2a527e6d724af62eec34bca8ac4e252c",
+    "text": "Prefers steps that continue in the same direction as the previous step (momentum: max).\n\n[{\"criterion\":\"momentum\",\"direction\":\"max\"}]",
+    "truncated": false
+  },
+  "openai-a2b233c056d471c7bc7071ab.json": {
+    "prompt_sha256": "4bc930999a5e9311dad92d11d3a9f54fb874594eb7232f2e8a54c7656344d556",
+    "text": "Prefers the square that is further to the right (larger column).\n\n[{\"criterion\": \"col\", \"direction\": \"max\"}]",
+    "truncated": false
+  },
+  "openai-a56812157b794aa0f4b3d44d.json": {
+    "prompt_sha256": "629ca02d759514a686557d6c9b258b42d6d15c6f4169356ab7755850d8186991",
+    "text": "{\"rule\":\"cannot tell from the provided branching examples\",\"score\":null,\"direction\":null}",
+    "truncated": false
+  },
+  "openai-aac7044cbdd4f463eb88ed66.json": {
+    "prompt_sha256": "851f9ceeff311e694dec5327b5878c5154f34ca7a528eaf3c2d583379f31c3aa",
+    "text": "Prefers to continue moving in the same direction as the previous step (momentum: max).\n\n[{\"criterion\":\"momentum\",\"direction\":\"max\"}]",
+    "truncated": false
+  },
+  "openai-af1574efa3266249855480f6.json": {
+    "prompt_sha256": "c2cfce5ff1050a7e293682e33be9a54113167934d0c234a6c0a0417360f09728",
+    "text": "Prefers the square that is closer to the observer (minimize observer_dist).\n\n[{\"criterion\":\"observer_dist\",\"direction\":\"min\"}]",
+    "truncated": false
+  },
+  "openai-b18256bc7019892f401f3e91.json": {
+    "prompt_sha256": "0fc35adf073f081ce36a687b15368480257444e06c94851e4980a05d4414fb0b",
+    "text": "Prefers the step that changes direction (minimize momentum).\n\n[{\"criterion\": \"momentum\", \"direction\": \"min\"}]",
+    "truncated": false
+  },
+  "openai-b5feeba93d1c85ec8e660dc7.json": {
+    "prompt_sha256": "233f75de4155431b9bdb674d72fd7a737ff43ef1afc0788d8bf72da84d53647e",
+    "text": "{\"rule\":\"Prefer moves that reduce the column distance to the goal (i.e. move horizontally toward the goal)\",\"score\":\"goal_col_align\",\"direction\":\"max\"}",
+    "truncated": false
+  },
+  "openai-beca596e5a0c71497ecaa17a.json": {
+    "prompt_sha256": "03e9b4b425c1a12aa7028378a7b329c544c006295519747a67699eedc25ed217",
+    "text": "{\"rule\":\"prefer squares closest to the movable landmark\",\"score\":\"abs(row - landmark_row) + abs(col - landmark_col)\",\"direction\":\"min\"}",
+    "truncated": false
+  },
+  "openai-c654af1f8433a928fa674a28.json": {
+    "prompt_sha256": "68b200bf821878050970c450fbee0e45285e2db471d6020d0a486708f4d62990",
+    "text": "{\"rule\":null,\"score\":null,\"direction\":null}",
+    "truncated": false
+  },
+  "openai-d941ef00079cb53298a7579c.json": {
+    "prompt_sha256": "b4b5671ae5df047dbfa85c5741cd415041572f5d0dfe01f2f60e03bcbbd951cb",
+    "text": "{\n  \"hypotheses\": [\n    {\n      \"rule\": \"Move along the axis that is currently farther from the goal (reduce the larger coordinate difference). If the row and column distances are equal, prefer moving south (i.e. prioritize row).\",\n      \"score\": \"abs(goal_col_align) - abs(goal_row_align)\",\n      \"direction\": \"max\"\n    },\n    {\n      \"rule\": \"Prefer to keep momentum (continue the same direction). If momentum is equal, prefer squares that increase distance from the observer, then prefer more open squares.\",\n      \"score\": \"4*momentum + observer_dist + openness\",\n      \"direction\": \"max\"\n    }\n  ]\n}",
+    "truncated": false
+  },
+  "openai-dc7b03a2d80cd53e2a7f4c42.json": {
+    "prompt_sha256": "431457ac99e4c45a9a5ae0f7ebc968ea111cb7096a25cfd0e8199b5c4d3ad955",
+    "text": "{\"rule\":\"Prefer the next square that is closer to the goal column (i.e. increases goal_col_align); if still tied, the fixed N,E,S,W order breaks ties.\",\"score\":\"goal_col_align\",\"direction\":\"max\"}",
+    "truncated": false
+  },
+  "openai-de04a9a805139be2ee434dcf.json": {
+    "prompt_sha256": "4911156a0a04fb0e5fedd930a467d47dde4e0917971ad96c734d97ca8a6eaed0",
+    "text": "{\"rule\":\"Prefer to keep the same heading (momentum). If choices tie on momentum, prefer the square with greater openness (more free adjacent cells). If still tied use fixed N,E,S,W order.\",\"score\":\"(8*momentum + openness)\",\"direction\":\"max\"}",
+    "truncated": false
+  },
+  "openai-e19bcdc670f68b56fa04c27d.json": {
+    "prompt_sha256": "196d423333d7ab52ccd1bf8915e9ef33f409708e07417d8ed9b28b5f0f2d5507",
+    "text": "Prefers the square with FEWER free neighbours; if tied, prefers continuing in the same direction (momentum), and if still tied prefers the square further to the RIGHT (larger column).\n\n[{\"criterion\": \"openness\", \"direction\": \"min\"}, {\"criterion\": \"momentum\", \"direction\": \"max\"}, {\"criterion\": \"col\", \"direction\": \"max\"}]",
+    "truncated": false
+  },
+  "openai-e9a1f6046d04546c46b3b2ab.json": {
+    "prompt_sha256": "159f3164838e9dceebdefc979a4e3fc3c89ab35d4dfbcc81de1e2b43975545e7",
+    "text": "{\"hypotheses\":[{\"rule\":\"Prefer steps that move closer to the observer (minimize observer distance).\",\"score\":\"observer_dist\",\"direction\":\"min\"},{\"rule\":\"If observer distance is tied, prefer moves that improve alignment with the goal column, with a small bias to keep momentum.\",\"score\":\"goal_col_align + momentum\",\"direction\":\"max\"}]}",
+    "truncated": false
+  },
+  "openai-fb7b940720b5e08bcc5dae1c.json": {
+    "prompt_sha256": "570446c4d5488fa5deaa892a6f52b021bc13503f6d55451de252213699d9d6fe",
+    "text": "prefers the square with a LARGER column (more to the right)\n\n[{\"criterion\": \"col\", \"direction\": \"max\"}]",
+    "truncated": false
+  },
+  "openai-fcd6359d0e4b208206ad9898.json": {
+    "prompt_sha256": "851f9ceeff311e694dec5327b5878c5154f34ca7a528eaf3c2d583379f31c3aa",
+    "text": "Prefers the square closest to the observer (observer_dist, direction = min).\n\n[{\"criterion\":\"observer_dist\",\"direction\":\"min\"}]",
+    "truncated": false
+  }
+}
