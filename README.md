@@ -7,7 +7,9 @@ human is trying to do* — not which card they hold. The observer maintains an
 explicit hypothesis set over intents, eliminates hypotheses inconsistent with
 what it sees, and chooses its own actions to learn as much as possible.
 
-No LLM. No learned distance metric. Exact set elimination over a finite space.
+The core inference system uses exact set elimination over a finite space. An
+optional experimental LLM branch proposes new gridworld rules, which the
+symbolic system checks before using for prediction.
 
 ## Quick start
 
@@ -221,6 +223,8 @@ checking reveals only the card.
 - [ ] Human pilot — run it
 - [x] LLM as *proposer only* — pipeline built and validated against ground truth
 - [ ] LLM proposer: an actual measured rejection rate (needs an API key)
+- [x] Experimental gridworld LLM benchmarks with live model responses and
+      checked-in replay fixtures (separate from the poker proposer)
 - [ ] Concordia wrapper: custom Game Master delegating resolution to this code
 
 ## Gridworld — second environment
@@ -283,7 +287,8 @@ propose a replacement from trajectories, compiles it to an executable policy,
 and then **runs it on 36 episodes the LLM never saw**. Recovery = predicts
 held-out behaviour exactly. Every rule is held out in turn.
 
-**Measured, and CLOSED.** Best recovery **37.5%** [27.7%, 48.5%]. Only 22.2% of
+**Original fixed-vocabulary benchmark measured, and CLOSED.** Best recovery
+**37.5%** [27.7%, 48.5%]. Only 22.2% of
 proposals fit the trajectories they were *shown*, while **0** fit-but-fail-to-
 generalise: the bottleneck is fitting the evidence, not induction. Two of four
 rules never beat the no-rule floor. **Shelved** — see RESULTS.md for the full
@@ -297,6 +302,42 @@ binary score, because the distribution is bimodal rather than near-miss.
 It has already paid for itself: check 1 failed on first run and exposed that
 `wall_hug` and `open_field` were inverted relative to their names — invisible to
 every numeric check in the project, because it is a pure relabelling.
+
+## Experimental LLM rule discovery (gridworld)
+
+These scripts study whether a model can suggest routing rules beyond the
+original vocabulary. They are research benchmarks, not part of the observer's
+main inference loop. Every accepted suggestion is compiled as a safe score,
+checked on all shown routes, and then evaluated on routes from other starts.
+
+| Experiment | Script | Finding |
+| --- | --- | --- |
+| Focused choices for known features | `diagnostic_benchmark.py` | 7/8 held-out behavioral fits versus 2/8 with full routes in a small test; the symbolic selector knew the candidate features. |
+| Named movable landmark | `novel_rule_benchmark.py` | 3/3 proposals predicted 72/72 held-out routes when the landmark and coordinates were explicitly shown. |
+| Unmarked fixed location | `latent_place_benchmark.py` | 0/3 location rules recovered in either input format; exhaustive symbolic coordinate search identified each location. |
+| Options plus active counterexamples | `active_open_rule.py` | Neither unmarked location was recovered after two simulated probes; one no-place control fit 36/36 held-out routes. |
+
+See the dated notes in [`results/`](results/README.md) for protocols and
+limits. To run checks and replay the published model responses without an API
+key:
+
+```bash
+python3 assist_recovery.py --selftest
+python3 diagnostic_benchmark.py --selftest
+python3 novel_rule_benchmark.py --selftest
+python3 latent_place_benchmark.py --selftest
+python3 active_open_rule.py --selftest
+python3 diagnostic_benchmark.py openai gpt-5-mini --samples 2 --from-cache
+python3 novel_rule_benchmark.py openai gpt-5-mini --samples 3 --from-cache
+python3 latent_place_benchmark.py openai gpt-5-mini --samples 1 --from-cache
+python3 latent_place_benchmark.py openai gpt-5-mini --samples 1 --view choices --from-cache
+python3 active_open_rule.py openai gpt-5-mini --cases toward_2_0 toward_4_2 wall_hug --revisions 2 --from-cache
+```
+
+`--from-cache` loads the selected model text in
+`fixtures/published_responses.json`, keyed by prompt digest, model, and sample.
+Omit the flag and set `OPENAI_API_KEY` to make new calls. This replays the
+recorded scoring; it does not recreate the original model sampling.
 
 ## LLM as proposer (poker)
 

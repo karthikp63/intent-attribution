@@ -4,6 +4,7 @@ __pycache__/
 venv/
 *.json
 !sample_runs.json
+!fixtures/published_responses.json
 .DS_Store
 .idea/
 .vscode/
